@@ -1,152 +1,51 @@
 # Social Post Extractor MCP
 
-## 中文说明
+这个 MCP 用来统一采集抖音、小红书和 Bilibili 内容：提取作者信息、作品信息、公开视频指标、字幕/转写稿、小红书图文图片分析，并在需要时通过浏览器登录态拉取自己账号的复盘数据。
 
-这是一个面向内容提取场景的 MCP 服务，目标很直接：
+默认产物是：
 
-- 你给它一个抖音链接
-- 或者给它一个小红书链接
-- 它返回结构化信息，并落盘生成脚本文件
+- `script.md`：给人和 AI 继续阅读、整理、入库的内容稿
+- `info.json`：给程序和 AI 使用的结构化数据，包括作者、指标、媒体、transcript、图片分析、模型信息和状态
 
-当前支持：
+设计原则：
 
-- 抖音视频
-- 小红书视频笔记
-- 小红书图文笔记
+- 外部视频只要 transcript 时，优先平台字幕；没有字幕才走云端 ASR。
+- 小红书图文笔记走云端视觉模型分析图片。
+- 自己账号复盘默认只抓数据，不做 ASR，因为原始稿通常已经在本地 `output/`。
+- 不把视频作为长期文件下载到本地；视频转写走远程媒体 URL 和云端临时处理链路。
+- API Key 只放本机配置或本机环境变量，不写进 Git。
 
-默认产物：
+---
 
-- `script.md`
-- `info.json`
+## Prompt 1：让 AI 从零配置这个 MCP
 
-### 功能总览
+把下面整段复制给你的 AI 助手。
 
-这个项目主要解决四件事：
+````text
+你现在是我的 MCP 配置工程师。请你帮我从零配置并验证 `social-post-extractor-mcp`，目标是让我可以稳定抓取抖音、小红书、Bilibili 的作者信息、作品信息、公开视频指标、字幕/转写稿，并且支持自己账号复盘数据。
 
-1. 统一解析抖音和小红书分享链接
-2. 自动识别视频笔记还是图文笔记
-3. 用云端模型完成视频转写、图片读字、轻量整理
-4. 统一输出适合后续内容加工的文件
+仓库地址：
+https://github.com/JNHFlow21/social-post-extractor-mcp
 
-### 项目优势
+请按下面要求执行，不要只给我建议。
 
-- 不再只支持抖音，已经扩展到小红书
-- 小红书不仅支持视频，也支持图文笔记
-- 输出不是一段临时文本，而是固定的 `script.md + info.json`
-- 默认走百炼的轻量模型组合，成本低、速度快、配置简单
-- 兼容旧接口，适合接到 Agent Reach 之类的 AI 工作流里
+一、先确认前置条件
 
-### 适合谁
+1. 检查本机是否有：
+   - `git`
+   - `python3`
+   - `uv`
+   - 一个可运行的 MCP 客户端，例如 mcporter、Claude Desktop、Codex、Claude Code 或其他支持 stdio MCP 的客户端
+2. 如果我要做“自己账号复盘”，还要检查：
+   - 已安装 `opencli`
+   - 已安装 `bb-browser`
+   - 本机浏览器已经登录抖音创作者中心、小红书创作者中心、Bilibili
+   - 执行 `opencli doctor`，确认浏览器自动化环境可用
+3. 如果我要做“外部内容 transcript / 小红书图文分析”，还要确认我有阿里云百炼 / DashScope 的 API Key。
 
-- 想把短视频或图文笔记转成文字稿的内容创作者
-- 想把 Douyin / Xiaohongshu 接入自己 AI 工作流的开发者
-- 想让 AI 自动读取链接、提取结构化内容、继续写脚本或做分析的人
+二、安装仓库
 
-### 默认推荐模型
-
-默认建议直接使用百炼：
-
-- `paraformer-v2`：视频语音转文字
-- `qwen3-vl-flash`：小红书图文图片读字
-- `qwen-flash`：轻量整理，只做分段、标点、明显错字修正
-
-这套默认组合的目标不是“最强”，而是：
-
-- 简单
-- 好用
-- 快
-- 成本低
-
-### 输出文件说明
-
-`script.md` 用来给人看，也方便继续交给 AI 做后续处理。通常包含：
-
-- 整理后的脚本
-- 原始转写
-- 小红书图文的图片文字提取结果
-
-`info.json` 用来给程序或 Agent 看。通常包含：
-
-- 平台
-- 内容类型
-- 标题
-- 作者
-- 发布时间
-- 媒体地址
-- 采用的 provider 和 model
-- 任务状态
-- 错误信息
-
-### 如果你只是想先看效果
-
-先看这两个 MCP 工具：
-
-- `parse_social_post_info`
-- `extract_social_post_script`
-
-前者只解析信息，后者直接生成 `script.md` 和 `info.json`。
-
-## For AI Agents
-
-AI-first MCP for extracting structured content from:
-
-- Douyin videos
-- Xiaohongshu video notes
-- Xiaohongshu image notes
-
-Default outputs:
-
-- `script.md`
-- `info.json`
-
-This repository is intended to be handed to an AI agent. Write prompts assuming the AI will read this file and perform the setup.
-
-## What This MCP Does
-
-Input:
-
-- one Douyin share link
-- one Xiaohongshu share link
-- share text that contains one of those links
-
-Output:
-
-- parsed metadata
-- raw transcript for videos
-- OCR text for Xiaohongshu image notes
-- lightly cleaned readable script
-- artifacts written to disk
-
-Supported MCP tools:
-
-- `parse_social_post_info`
-- `extract_social_post_script`
-- `parse_douyin_video_info`
-- `get_douyin_download_link`
-- `extract_douyin_text`
-
-## Default Decision
-
-If you are an AI agent configuring this repo, use this default stack unless the user explicitly asks for something else:
-
-- `ASR_PROVIDER=bailian`
-- `ASR_MODEL=paraformer-v2`
-- `VISION_PROVIDER=bailian`
-- `VISION_MODEL=qwen3-vl-flash`
-- `CLEAN_PROVIDER=bailian`
-- `CLEAN_MODEL=qwen-flash`
-
-Reason:
-
-- `paraformer-v2` is the cheapest and fastest default for video ASR
-- `qwen3-vl-flash` is a good default for Xiaohongshu image-note OCR
-- `qwen-flash` is enough for light cleanup: punctuation, paragraphing, obvious typo fixes
-
-Do not switch to heavier models by default.
-
-## Install
-
-If you are an AI agent, execute these steps in order:
+如果本机还没有仓库，请执行：
 
 ```bash
 git clone https://github.com/JNHFlow21/social-post-extractor-mcp.git
@@ -154,27 +53,26 @@ cd social-post-extractor-mcp
 uv sync
 ```
 
-Optional local verification:
+如果本机已有仓库，请进入已有目录并执行：
 
 ```bash
-python3 -m unittest discover -s tests
+git pull
+uv sync
 ```
 
-Run the MCP server:
+三、配置密钥
+
+请不要把真实 API Key 写入 Git 仓库，也不要提交 `.env`。
+
+优先使用这个本机密钥文件：
 
 ```bash
-uv run python -m social_post_extractor_mcp
+mkdir -p ~/.mcporter/secrets
+cp .env.example ~/.mcporter/secrets/social-post-extractor.env
+chmod 600 ~/.mcporter/secrets/social-post-extractor.env
 ```
 
-## Configure
-
-Copy the template:
-
-```bash
-cp .env.example .env
-```
-
-Use this exact default configuration:
+然后让我把真实值填进去：
 
 ```bash
 ASR_PROVIDER=bailian
@@ -183,14 +81,33 @@ VISION_PROVIDER=bailian
 VISION_MODEL=qwen3-vl-flash
 CLEAN_PROVIDER=bailian
 CLEAN_MODEL=qwen-flash
-BAILIAN_API_KEY=your_bailian_api_key
+BAILIAN_API_KEY=我的真实百炼或DashScope API Key
 ```
 
-Do not commit `.env`.
+如果我有自定义 URL，也一起写入：
 
-## MCP Config Snippet
+```bash
+BAILIAN_BASE_URL=我的DashScope兼容Base URL
+BAILIAN_ASR_URL=我的ASR专用URL
+```
 
-If you are wiring this repo into an MCP client, use a local config like this:
+如果我没有自定义 URL，就不要强行配置 URL，使用默认 DashScope 地址。
+
+四、配置 MCP 客户端
+
+如果我使用 mcporter，请先执行：
+
+```bash
+mcporter config list
+```
+
+确认当前有效配置文件。通常是：
+
+```bash
+~/.mcporter/mcporter.json
+```
+
+把下面这个 MCP server 加进去。注意把路径替换成本机真实路径：
 
 ```json
 {
@@ -199,204 +116,402 @@ If you are wiring this repo into an MCP client, use a local config like this:
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "cd '/absolute/path/to/social-post-extractor-mcp' && exec '.venv/bin/python' -m social_post_extractor_mcp"
-      ],
-      "env": {
-        "ASR_PROVIDER": "bailian",
-        "ASR_MODEL": "paraformer-v2",
-        "VISION_PROVIDER": "bailian",
-        "VISION_MODEL": "qwen3-vl-flash",
-        "CLEAN_PROVIDER": "bailian",
-        "CLEAN_MODEL": "qwen-flash",
-        "BAILIAN_API_KEY": "YOUR_BAILIAN_API_KEY"
-      }
+        "cd '/ABSOLUTE/PATH/social-post-extractor-mcp' && exec '.venv/bin/python' -m social_post_extractor_mcp"
+      ]
     }
   }
 }
 ```
 
-Use the shell wrapper form above if your MCP client launches stdio servers from a directory outside this repo. It avoids Python module resolution failures.
+说明：
 
-### Agent Reach / mcporter
+- server 名可以叫 `douyin`，这是为了兼容旧调用；它实际支持抖音、小红书和 Bilibili。
+- 如果你把 server 名改成 `social-post-extractor`，后面的 MCP 调用前缀也要同步改。
+- 不建议把真实 API Key 直接写进 MCP JSON；本仓库会自动读取 `~/.mcporter/secrets/social-post-extractor.env`。
 
-If the user is using Agent Reach, the effective system config is usually:
+如果我使用 Claude Desktop、Codex、Claude Code 或其他 MCP 客户端，请使用同样的 stdio 配置结构：`command` 用 `/bin/zsh`，`args` 用 `cd 仓库目录 && exec .venv/bin/python -m social_post_extractor_mcp`。
 
-- `~/.mcporter/mcporter.json`
+五、运行验证
 
-Do not assume `~/.agent-reach/tools/.../config/mcporter.json` is the active config file.
+先在仓库目录执行：
 
-Check the active source with:
+```bash
+uv run python -m unittest discover -s tests
+uv run python -m compileall social_post_extractor_mcp
+```
+
+如果我使用 mcporter，再执行：
 
 ```bash
 mcporter config list
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
-If `mcporter config list` shows the `douyin` server coming from `~/.mcporter/mcporter.json`, edit that file instead.
-
-## How To Buy The API
-
-This repo currently assumes Alibaba Cloud Bailian / DashScope for the default path.
-
-Official product page:
-
-- https://www.aliyun.com/product/bailian
-
-Official pricing page:
-
-- https://help.aliyun.com/zh/model-studio/model-pricing
-
-Official first API call / API key doc:
-
-- https://help.aliyun.com/zh/model-studio/getting-started/first-api-call-to-qwen
-
-If you are an AI agent, the purchase flow is:
-
-1. Ask the user to log in to Alibaba Cloud.
-2. Tell the user to open the Bailian product page.
-3. Tell the user to activate Bailian if it is not activated yet.
-4. Tell the user to recharge their Alibaba Cloud account balance.
-5. Tell the user to open Bailian console `密钥管理`.
-6. Tell the user to create an API key.
-7. Put that key into local config as `BAILIAN_API_KEY`.
-
-Current official product page also advertises:
-
-- a one-click API onboarding entry
-- free token quota for new users
-
-Important:
-
-- Keep the API key in local config or local environment variables only.
-- Do not commit the real key to Git.
-- Do not paste the real key into tracked files.
-
-## Current Official Pricing Reference
-
-All numbers below are from Alibaba Cloud official pages and should be treated as the current default reference for this repo.
-
-### Video ASR
-
-`paraformer-v2`:
-
-- `0.00008 元 / 秒`
-- `36,000 秒` monthly free quota shown on the pricing page, equal to `10 小时`
-
-`fun-asr`:
-
-- `0.00022 元 / 秒`
-
-Interpretation:
-
-- `fun-asr` is about `2.75x` the price of `paraformer-v2`
-- use `paraformer-v2` as the default unless the user explicitly needs a more expensive ASR model
-
-### Vision OCR
-
-`qwen3-vl-flash` under the current pricing page tier `0 < Token <= 32K`:
-
-- input: `0.15 元 / 百万 Token`
-- output: `1.5 元 / 百万 Token`
-
-### Light Cleanup
-
-`qwen-flash` under the current pricing page tier `0 < Token <= 128K`:
-
-- input: `0.15 元 / 百万 Token`
-- output: `1.5 元 / 百万 Token`
-
-## Estimated Cost
-
-These are rough operating estimates for the default stack.
-
-### ASR Cost
-
-Using `paraformer-v2` only:
-
-- `1 minute video` ≈ `0.0048 元`
-- `3 minute video` ≈ `0.0144 元`
-- `5 minute video` ≈ `0.024 元`
-- `10 minute video` ≈ `0.048 元`
-- `100 videos x 1 minute` ≈ `0.48 元`
-- `100 videos x 3 minutes` ≈ `1.44 元`
-- `100 hours total` ≈ `28.8 元`
-
-### Light Cleanup Cost
-
-For `qwen-flash`, cleanup is usually negligible compared with ASR.
-
-Reference estimate:
-
-- assume `2,000` input tokens + `2,000` output tokens for one short transcript
-- estimated cleanup cost ≈ `0.0033 元 / 条`
-
-Formula:
-
-- input cost = `input_tokens / 1,000,000 * 0.15`
-- output cost = `output_tokens / 1,000,000 * 1.5`
-
-### Xiaohongshu Image OCR Cost
-
-For `qwen3-vl-flash`, OCR cost depends on:
-
-- image count
-- image size
-- prompt tokens
-- OCR output length
-
-Use this as the operating rule:
-
-- image-note OCR is still cheap for normal creator workflows
-- if the user mainly processes videos, budget primarily by ASR
-- if the user mainly processes long multi-image notes, monitor token usage from actual runs instead of guessing
-
-## What The Code Handles vs What The Models Handle
-
-Code handles:
-
-- link parsing
-- Douyin / Xiaohongshu detection
-- note type detection
-- metadata extraction
-- artifact directory creation
-- writing `script.md` and `info.json`
-
-Cloud models handle:
-
-- `paraformer-v2`: video speech-to-text
-- `qwen3-vl-flash`: image text extraction
-- `qwen-flash`: light readability cleanup
-
-This is not "the LLM figures everything out by itself".
-The MCP does the workflow orchestration; the models only handle recognition and light cleanup.
-
-## Recommended Behavior For AI Agents
-
-If you are an AI agent using this repo:
-
-1. Prefer `extract_social_post_script` over platform-specific tools.
-2. Keep `extract_douyin_text` only for backward compatibility.
-3. Keep cleanup light. Do not summarize unless the user asks.
-4. Preserve raw transcript and raw OCR text in artifacts.
-5. Do not change the default model stack unless the user asks.
-6. Do not store real API keys in tracked files.
-
-## Minimal Verification Commands
-
-Run these after setup:
+如果我提供抖音、小红书、Bilibili 的真实链接，请分别测试：
 
 ```bash
-python3 -m unittest discover -s tests
+mcporter call 'douyin.parse_social_post_info(share_link: "我给你的链接")'
+mcporter call 'douyin.social_extract_transcript(share_link: "我给你的视频链接", output_dir: "/tmp/social-post-extract")'
+mcporter call 'douyin.social_capture_url(share_link: "我给你的链接", output_dir: "/tmp/social-post-extract")'
 ```
 
-Example MCP smoke test:
+如果我要测试自己账号复盘，请测试：
 
 ```bash
-mcporter call 'douyin.extract_social_post_script(share_link: "https://v.douyin.com/xxxxx/", output_dir: "/tmp/social-post-extract")'
+mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "profile")'
+mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "recent_posts", limit: 5)'
+mcporter call 'douyin.social_analyze_owner_posts(platform: "xiaohongshu", report_type: "recent_posts", limit: 5)'
+mcporter call 'douyin.social_analyze_owner_posts(platform: "bilibili", report_type: "recent_posts", limit: 5)'
 ```
 
-## Related Docs
+六、配置完成后，请你教我怎么使用
 
-- [AGENT_REACH_INTEGRATION.md](./AGENT_REACH_INTEGRATION.md)
+请在最终回复里用中文教我：
+
+1. 外部视频 transcript 应该调用哪个工具。
+2. 小红书图文笔记应该调用哪个工具。
+3. 只要作者和指标、不需要 ASR 时应该调用哪个工具。
+4. 自己账号复盘应该调用哪个工具。
+5. `script.md` 和 `info.json` 会保存在哪里。
+6. 我以后给你链接时，你会如何判断走“外部素材提取”还是“自己账号复盘”。
+7. 如果失败，我应该把哪些错误信息发给你排查。
+
+七、必须遵守的规则
+
+1. 不要把真实 API Key 写进 README、代码、测试或任何 Git 会提交的文件。
+2. 不要长期下载和保存视频文件到本地。
+3. 处理别人的视频时，可以走云端 ASR；处理我自己账号复盘时，默认只抓数据，不做 ASR。
+4. 小红书图文笔记要保留正文、图片 URL 和云端视觉分析结果。
+5. 所有结果都要尽量保留结构化字段，不要只给自然语言摘要。
+6. 如果 MCP 配置、浏览器登录态或 API Key 有问题，请先定位问题并修复，再继续测试。
+````
+
+---
+
+## Prompt 2：只把这个 MCP 接入已有 mcporter
+
+如果你已经有仓库和 mcporter，把下面复制给 AI。
+
+````text
+请你只做一件事：把 `social-post-extractor-mcp` 接入我现有的 mcporter 配置，并完成 smoke test。
+
+仓库路径：
+请先帮我查找，常见位置是：
+- 当前目录
+- `~/Code/social-post-extractor-mcp`
+- `~/Library/Mobile Documents/com~apple~CloudDocs/Codex/social-post-extractor-mcp`
+
+要求：
+
+1. 运行 `mcporter config list`，确认当前有效配置文件。
+2. 检查仓库是否能运行：
+   ```bash
+   uv sync
+   uv run python -m unittest discover -s tests
+   ```
+3. 检查是否存在：
+   ```bash
+   ~/.mcporter/secrets/social-post-extractor.env
+   ```
+4. 如果不存在，请根据 `.env.example` 创建它，并让我填入真实 API Key。
+5. 在有效 mcporter 配置里添加这个 server：
+   ```json
+   {
+     "mcpServers": {
+       "douyin": {
+         "command": "/bin/zsh",
+         "args": [
+           "-lc",
+           "cd '/ABSOLUTE/PATH/social-post-extractor-mcp' && exec '.venv/bin/python' -m social_post_extractor_mcp"
+         ]
+       }
+     }
+   }
+   ```
+6. 执行 smoke test：
+   ```bash
+   mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+   ```
+7. 如果 smoke test 成功，请告诉我以后怎么调用；如果失败，请给出明确的失败原因和下一步修复动作。
+````
+
+---
+
+## Prompt 3：让 AI 用真实链接完整测试
+
+把你要测试的抖音、小红书、Bilibili 链接和下面这段一起发给 AI。
+
+````text
+请你用 `social-post-extractor-mcp` 测试我下面提供的所有链接。你要覆盖这些 use case：
+
+1. 抖音公开视频：提取标题、作者、点赞、评论、转发、收藏、播放量/可见指标、媒体信息。
+2. 抖音视频 transcript：优先平台可用字幕，没有字幕才走云端 ASR。
+3. 小红书视频笔记：提取正文、作者、点赞、评论、收藏、分享、视频 transcript。
+4. 小红书图文笔记：提取正文、作者、指标、图片 URL，并用云端视觉模型分析图片内容。
+5. Bilibili 视频：提取标题、作者、播放、点赞、投币、收藏、弹幕、评论、字幕；没有字幕时再走云端 ASR。
+6. 如果链接属于我自己的账号，还要额外测试 `social_analyze_owner_posts` 能否拿到创作者中心的复盘数据。
+
+测试时请分别调用：
+
+```bash
+mcporter call 'douyin.parse_social_post_info(share_link: "链接")'
+mcporter call 'douyin.social_extract_transcript(share_link: "视频链接", output_dir: "/tmp/social-post-extract")'
+mcporter call 'douyin.social_capture_url(share_link: "链接", output_dir: "/tmp/social-post-extract")'
+```
+
+测试结果请按表格汇总：
+
+- 平台
+- 链接
+- 是否成功
+- post_id / BV 号
+- 标题
+- 作者
+- 关键指标
+- transcript 或图片分析是否成功
+- 输出文件路径
+- 失败原因和修复动作
+
+不要只说“可以用”。必须给出实际调用结果和失败项。
+
+下面是我的链接：
+
+【把链接粘贴在这里】
+````
+
+---
+
+## Prompt 4：让 AI 把外部素材提取进知识库
+
+适合处理“别人的访谈、公开视频、小红书图文笔记”，目标是保存 transcript 和结构化信息。
+
+````text
+请你使用 `social-post-extractor-mcp` 把我给的外部社交平台内容整理成可进入知识库的素材。
+
+输入链接可能来自：
+- 抖音
+- 小红书
+- Bilibili
+
+处理规则：
+
+1. 统一调用：
+   ```bash
+   mcporter call 'douyin.social_capture_url(share_link: "链接", output_dir: "指定输出目录")'
+   ```
+2. 视频内容：
+   - 优先使用平台字幕。
+   - 没有字幕时使用云端 ASR。
+   - 不要长期下载视频到本地。
+3. 小红书图文：
+   - 提取正文。
+   - 保存图片 URL。
+   - 使用云端视觉模型分析每张图片。
+4. 输出必须包含：
+   - `script.md`
+   - `info.json`
+5. 入库时保留双向链接：
+   - 原始素材文件链接到后续 wiki/复盘/输出文档。
+   - 后续文档也要能链接回原始素材。
+6. 不要把 transcript 直接总结掉；先保留原文，再在需要时另开摘要或分析。
+
+请先完成抓取和文件生成，然后告诉我：
+
+- 内容保存在哪里
+- transcript 或图片分析是否完整
+- 作者和指标提取到了哪些字段
+- 下一步可以如何进入知识库
+````
+
+---
+
+## Prompt 5：让 AI 做自己账号复盘
+
+适合处理“我自己的账号数据”。默认不做 ASR，只抓创作者中心数据，并和本地 `output/` 的原始稿或 transcript 对齐。
+
+````text
+请你使用 `social-post-extractor-mcp` 做我自己的账号复盘。
+
+我的账号名：
+【填写账号名，例如 AI杰瑞斯 / AI 杰瑞斯】
+
+平台：
+【douyin / xiaohongshu / bilibili，可以多个】
+
+复盘规则：
+
+1. 默认不要对我自己的作品跑云端 ASR。
+2. 先用 `social_analyze_owner_posts` 抓创作者中心或账号后台数据：
+   ```bash
+   mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "profile")'
+   mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "recent_posts", limit: 20)'
+   mcporter call 'douyin.social_analyze_owner_posts(platform: "xiaohongshu", report_type: "recent_posts", limit: 20)'
+   mcporter call 'douyin.social_analyze_owner_posts(platform: "bilibili", report_type: "recent_posts", limit: 20)'
+   ```
+3. 如果需要单篇详情，再调用：
+   ```bash
+   mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "post_detail", post_id: "作品ID")'
+   ```
+4. 把抓到的数据和本地 `output/` 里的原始文章、口播稿、视频 transcript 对齐。
+5. 对每条作品生成或更新对应的 `_review.md`，不要把复盘数据塞回原稿正文里。
+6. `_review.md` 要链接回原始 `output/` 文件；原始 `output/` 文件也要能链接到对应复盘文档。
+7. 复盘重点：
+   - 曝光 / 播放
+   - 点击或进入主页
+   - 点赞
+   - 评论
+   - 收藏
+   - 转发
+   - 涨粉 / 掉粉
+   - 完播率或可用的留存指标
+   - 作品标题、Hook、结构和数据表现之间的关系
+
+如果浏览器登录态、opencli 或 bb-browser 失败，请先修复自动化环境，再继续复盘。
+````
+
+---
+
+## Prompt 6：排错
+
+MCP 配置失败、ASR 失败、作者指标缺失时，把下面复制给 AI。
+
+````text
+请你帮我排查 `social-post-extractor-mcp`。
+
+你必须按顺序检查：
+
+1. 当前目录是否是正确仓库：
+   ```bash
+   pwd
+   git remote -v
+   git status --short --branch
+   ```
+2. Python 环境：
+   ```bash
+   uv sync
+   uv run python -m unittest discover -s tests
+   uv run python -m compileall social_post_extractor_mcp
+   ```
+3. MCP 客户端配置：
+   ```bash
+   mcporter config list
+   ```
+   确认 server 名、command、args、仓库路径是否正确。
+4. 密钥文件：
+   ```bash
+   ls -l ~/.mcporter/secrets/social-post-extractor.env
+   ```
+   只确认文件存在和权限，不要把真实 API Key 打印到聊天里。
+5. API provider：
+   - `ASR_PROVIDER=bailian`
+   - `ASR_MODEL=paraformer-v2`
+   - `VISION_PROVIDER=bailian`
+   - `VISION_MODEL=qwen3-vl-flash`
+   - `CLEAN_PROVIDER=bailian`
+   - `CLEAN_MODEL=qwen-flash`
+6. 外部链接解析：
+   ```bash
+   mcporter call 'douyin.parse_social_post_info(share_link: "链接")'
+   ```
+7. transcript 或图文分析：
+   ```bash
+   mcporter call 'douyin.social_capture_url(share_link: "链接", output_dir: "/tmp/social-post-extract")'
+   ```
+8. 自己账号复盘环境：
+   ```bash
+   opencli doctor
+   mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "profile")'
+   ```
+
+输出时请给我：
+
+- 失败发生在哪一层：仓库、依赖、MCP 配置、API Key、平台登录态、链接解析、云端模型、输出文件
+- 证据：关键命令的结果摘要
+- 修复动作：你已经做了什么，还需要我做什么
+- 修复后重新跑的验证命令
+````
+
+---
+
+## MCP 工具速查
+
+推荐工具：
+
+- `social_capture_url`：统一采集抖音、小红书、Bilibili，生成 `script.md` 和 `info.json`
+- `social_extract_transcript`：只关心视频 transcript 时使用
+- `parse_social_post_info`：只要作者、作品、公开视频指标、媒体信息时使用，不跑 ASR
+- `social_analyze_owner_posts`：自己账号复盘数据，依赖浏览器登录态、`opencli`、`bb-browser`
+
+兼容旧工具：
+
+- `parse_douyin_video_info`
+- `get_douyin_download_link`
+- `extract_douyin_text`
+
+---
+
+## 环境变量速查
+
+最小配置：
+
+```bash
+ASR_PROVIDER=bailian
+ASR_MODEL=paraformer-v2
+VISION_PROVIDER=bailian
+VISION_MODEL=qwen3-vl-flash
+CLEAN_PROVIDER=bailian
+CLEAN_MODEL=qwen-flash
+BAILIAN_API_KEY=your_bailian_or_dashscope_api_key
+```
+
+可选配置：
+
+```bash
+DASHSCOPE_API_KEY=your_dashscope_api_key
+BAILIAN_BASE_URL=custom_base_url
+DASHSCOPE_BASE_URL=custom_base_url
+BAILIAN_ASR_URL=custom_asr_url
+DASHSCOPE_ASR_URL=custom_asr_url
+DASHSCOPE_SHORT_ASR_MODEL=qwen3-asr-flash
+DASHSCOPE_LONG_ASR_MODEL=qwen3-asr-flash-filetrans
+DASHSCOPE_SHORT_MAX_DURATION_SEC=300
+```
+
+推荐密钥位置：
+
+```bash
+~/.mcporter/secrets/social-post-extractor.env
+```
+
+---
+
+## 常用调用
+
+只解析信息：
+
+```bash
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+```
+
+只提取 transcript：
+
+```bash
+mcporter call 'douyin.social_extract_transcript(share_link: "视频链接", output_dir: "/tmp/social-post-extract")'
+```
+
+完整采集：
+
+```bash
+mcporter call 'douyin.social_capture_url(share_link: "链接", output_dir: "/tmp/social-post-extract")'
+```
+
+自己账号复盘：
+
+```bash
+mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "recent_posts", limit: 10)'
+```
+
+---
 
 ## License
 

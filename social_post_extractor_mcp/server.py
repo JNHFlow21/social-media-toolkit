@@ -5,11 +5,22 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 
-from .social_extractor import DEFAULT_ASR_PROVIDER, SocialExtractorService
+from .social_extractor import DEFAULT_ASR_PROVIDER, OwnerAnalyticsCommandProvider, SocialExtractorService
+
+
+_env_file = Path.home() / ".mcporter" / "secrets" / "social-post-extractor.env"
+if _env_file.exists() and not os.getenv("ASR_PROVIDER"):
+    with open(_env_file, encoding="utf-8") as _file:
+        for _line in _file:
+            _line = _line.strip()
+            if _line.startswith("export ") and "=" in _line:
+                _key, _, _value = _line[7:].partition("=")
+                os.environ[_key.strip()] = _value.strip("'\"")
 
 
 mcp = FastMCP(
@@ -18,6 +29,7 @@ mcp = FastMCP(
 )
 
 _SERVICE = SocialExtractorService()
+_OWNER_ANALYTICS = OwnerAnalyticsCommandProvider()
 
 
 def _detect_legacy_asr_provider(model: Optional[str]) -> str:
@@ -37,7 +49,11 @@ def parse_social_post_info_value(share_link: str) -> dict:
         "author": {
             "name": post.author_name,
             "id": post.author_id,
+            **(post.author_profile or {}),
         },
+        "public_metrics": post.public_metrics,
+        "owner_metrics": post.owner_metrics,
+        "media": post.media,
         "publish_time": post.publish_time,
         "cover_url": post.cover_url,
         "duration_sec": post.duration_sec,
@@ -123,6 +139,105 @@ def extract_social_post_script(
 
 
 @mcp.tool()
+def social_capture_url(
+    share_link: str,
+    output_dir: Optional[str] = None,
+    asr_provider: Optional[str] = None,
+    asr_model: Optional[str] = None,
+    vision_provider: Optional[str] = None,
+    vision_model: Optional[str] = None,
+    clean_provider: Optional[str] = None,
+    clean_model: Optional[str] = None,
+    save_raw_segments: bool = False,
+) -> str:
+    """
+    统一采集抖音、小红书、Bilibili 链接，输出 script.md 和 info.json。
+
+    返回值包含作者信息、作品指标、媒体信息、transcript 和图片分析结果。
+    """
+    try:
+        result = extract_social_post_script_value(
+            share_link,
+            output_dir=output_dir,
+            asr_provider=asr_provider,
+            asr_model=asr_model,
+            vision_provider=vision_provider,
+            vision_model=vision_model,
+            clean_provider=clean_provider,
+            clean_model=clean_model,
+            save_raw_segments=save_raw_segments,
+        )
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_extract_transcript(
+    share_link: str,
+    output_dir: Optional[str] = None,
+    asr_provider: Optional[str] = None,
+    asr_model: Optional[str] = None,
+) -> str:
+    """提取视频 transcript。优先使用平台字幕，没有字幕时走配置的云端 ASR。"""
+    try:
+        result = extract_social_post_script_value(
+            share_link,
+            output_dir=output_dir,
+            asr_provider=asr_provider,
+            asr_model=asr_model,
+        )
+        info = result.get("info") or {}
+        return json.dumps(
+            {
+                "status": info.get("status", "success"),
+                "platform": result.get("platform"),
+                "content_type": result.get("content_type"),
+                "post_id": result.get("post_id"),
+                "transcript": info.get("transcript") or {"source": None, "text": result.get("raw_transcript")},
+                "script_path": result.get("script_path"),
+                "info_path": result.get("info_path"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_analyze_owner_posts(
+    platform: str,
+    report_type: str = "recent_posts",
+    limit: int = 10,
+    post_id: Optional[str] = None,
+    account_id: Optional[str] = None,
+    account_name: Optional[str] = None,
+    period: Optional[str] = None,
+    timeout: int = 120,
+) -> str:
+    """
+    调用 browser-backed CLI 拉取自己账号的复盘数据。
+
+    需要本机已登录对应平台，并安装 opencli / bb-browser。
+    """
+    try:
+        result = _OWNER_ANALYTICS.run(
+            platform,
+            report_type,
+            limit=limit,
+            post_id=post_id,
+            account_id=account_id,
+            account_name=account_name,
+            period=period,
+            timeout=timeout,
+        )
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 def parse_douyin_video_info(share_link: str) -> str:
     """兼容旧接口：只处理抖音链接并返回视频信息。"""
     try:
@@ -198,8 +313,12 @@ def social_post_extraction_guide() -> str:
 - 抖音视频
 - 小红书视频笔记
 - 小红书图文笔记
+- Bilibili 视频
 
 ## 推荐工具
+- `social_capture_url`: 统一采集链接并生成 script.md 和 info.json
+- `social_extract_transcript`: 只关心视频 transcript 时使用
+- `social_analyze_owner_posts`: 拉取自己账号的复盘数据
 - `parse_social_post_info`: 只解析基础信息
 - `extract_social_post_script`: 生成 script.md 和 info.json
 
@@ -210,7 +329,7 @@ def social_post_extraction_guide() -> str:
 
 ## 默认输出
 - `script.md`: 整理稿 + 原始内容
-- `info.json`: 结构化 metadata、模型信息和状态
+- `info.json`: 结构化 metadata、作者信息、公开视频指标、媒体信息、transcript、图片分析、模型信息和状态
 
 ## 模型切换
 支持通过环境变量设置默认 provider/model，也支持在单次调用时覆盖：

@@ -6,18 +6,27 @@ from pathlib import Path
 from unittest.mock import patch
 
 from social_post_extractor_mcp.social_extractor import (
+    BilibiliPlatformAdapter,
     DEFAULT_ASR_MODEL,
     DEFAULT_ASR_PROVIDER,
     DashScopeASRProvider,
     ExtractionContext,
     OpenAICompatibleASRProvider,
+    OwnerAnalyticsCommandProvider,
     SocialExtractorService,
     SocialPost,
+    build_info_dict,
     build_volcengine_request_payload,
     build_volcengine_audio_request,
     build_volcengine_full_client_request,
     default_model_for_provider,
+    parse_douyin_creator_items,
+    parse_douyin_creator_overview,
+    parse_douyin_creator_post_detail,
+    parse_douyin_creator_profile,
     parse_volcengine_server_message,
+    _extract_html_title,
+    _extract_title_from_share_text,
     XHSStateParser,
     provider_asr_config,
     provider_volcengine_speech_config,
@@ -67,6 +76,38 @@ class FailingAsrProvider:
 
 
 class SocialExtractorServiceTests(unittest.TestCase):
+    def test_explicit_empty_cleanup_registry_disables_env_cleanup_provider(self):
+        post = SocialPost(
+            platform="xiaohongshu",
+            content_type="image_note",
+            source_url="https://www.xiaohongshu.com/explore/demo",
+            resolved_url="https://www.xiaohongshu.com/explore/demo",
+            post_id="note-no-cleanup",
+            title="测试不自动调用环境清理模型",
+            body="正文段落",
+            image_urls=[],
+        )
+        service = SocialExtractorService(
+            platform_adapters=[FakePlatformAdapter(post)],
+            asr_providers={},
+            cleanup_providers={},
+            vision_providers={},
+            ocr_provider=FakeOcrProvider(),
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.dict("os.environ", {"BAILIAN_API_KEY": "demo-key"}, clear=False),
+        ):
+            result = service.extract_social_post(
+                "https://www.xiaohongshu.com/explore/demo",
+                output_dir=tmpdir,
+            )
+
+        self.assertEqual(result["info"]["status"], "success")
+        self.assertIsNone(result["info"]["clean_provider"])
+        self.assertEqual(result["script_preview"], "正文段落")
+
     def test_defaults_prefer_bailian_simple_stack(self):
         self.assertEqual(DEFAULT_ASR_PROVIDER, "bailian")
         self.assertEqual(DEFAULT_ASR_MODEL, "paraformer-v2")
@@ -507,6 +548,30 @@ class VolcengineSpeechProtocolTests(unittest.TestCase):
 
 
 class XHSStateParserTests(unittest.TestCase):
+    def test_extract_title_from_xhs_share_text(self):
+        self.assertEqual(
+            _extract_title_from_share_text(
+                "Copy and open rednote to view the note\n"
+                "香港人凭啥连续十年全球第一长寿？ http://xhslink.com/o/7qdk43ccqi0"
+            ),
+            "香港人凭啥连续十年全球第一长寿？",
+        )
+        self.assertEqual(
+            _extract_title_from_share_text(
+                "把文本复制好，来【小红书】看看这篇笔记吧！\n"
+                "AGI 还有3年，保持健康，撑到2030年代初 http://xhslink.com/o/AroffmRfoET"
+            ),
+            "AGI 还有3年，保持健康，撑到2030年代初",
+        )
+
+    def test_extract_title_from_xhs_html_meta(self):
+        self.assertEqual(
+            _extract_html_title(
+                '<html><head><meta property="og:title" content="香港人凭啥连续十年全球第一长寿？ #香港生活 - 小红书"></head></html>'
+            ),
+            "香港人凭啥连续十年全球第一长寿？",
+        )
+
     def test_parse_html_extracts_video_metadata(self):
         html = """
         <html><body><script>
@@ -536,6 +601,319 @@ class XHSStateParserTests(unittest.TestCase):
         self.assertEqual(post.video_url, "https://video.example.com/a.mp4")
         self.assertEqual(post.cover_url, "https://img.example.com/cover.jpg")
         self.assertEqual(post.duration_sec, 88)
+
+    def test_parse_html_uses_meta_title_when_note_title_is_missing(self):
+        html = """
+        <html><head><title>香港人凭啥连续十年全球第一长寿？ - 小红书</title></head><body><script>
+        window.__INITIAL_STATE__={"note":{"noteDetailMap":{"abc123":{"note":{
+        "noteId":"abc123",
+        "title":"",
+        "desc":"视频正文",
+        "type":"video",
+        "user":{"nickname":"作者","userId":"user-1"},
+        "imageList":[{"urlDefault":"http://img.example.com/cover.jpg"}],
+        "video":{"media":{"stream":{"h264":[{"masterUrl":"http://video.example.com/a.mp4"}]}}}
+        }}}}}
+        </script></body></html>
+        """
+
+        post = XHSStateParser.parse_html(
+            html=html,
+            source_url="https://xhslink.com/demo",
+            resolved_url="https://www.xiaohongshu.com/explore/abc123?xsec_token=tok",
+        )
+
+        self.assertEqual(post.title, "香港人凭啥连续十年全球第一长寿？")
+
+    def test_parse_html_extracts_structured_author_metrics_and_images(self):
+        html = """
+        <html><body><script>
+        window.__INITIAL_STATE__={"note":{"noteDetailMap":{"abc123":{"note":{
+        "noteId":"abc123",
+        "title":"图文标题",
+        "desc":"图文正文",
+        "type":"normal",
+        "time":123456,
+        "user":{"nickname":"作者","userId":"user-1","redId":"red-1","avatar":"http://img.example.com/a.jpg","desc":"简介"},
+        "interactInfo":{"likedCount":"12","collectedCount":"3","commentCount":"4","shareCount":"5"},
+        "imageList":[{"urlDefault":"http://img.example.com/1.jpg"},{"urlPre":"http://img.example.com/2.jpg"}],
+        "tagList":[{"name":"AI"}]
+        }}}}}
+        </script></body></html>
+        """
+
+        post = XHSStateParser.parse_html(
+            html=html,
+            source_url="https://xhslink.com/demo",
+            resolved_url="https://www.xiaohongshu.com/explore/abc123?xsec_token=tok",
+        )
+
+        self.assertEqual(post.author_profile["name"], "作者")
+        self.assertEqual(post.author_profile["handle"], "red-1")
+        self.assertEqual(post.author_profile["avatar_url"], "https://img.example.com/a.jpg")
+        self.assertEqual(post.public_metrics["likes"], "12")
+        self.assertEqual(post.public_metrics["collects"], "3")
+        self.assertEqual(post.public_metrics["comments"], "4")
+        self.assertEqual(post.public_metrics["shares"], "5")
+        self.assertEqual(
+            post.media["image_urls"],
+            ["https://img.example.com/1.jpg", "https://img.example.com/2.jpg"],
+        )
+
+
+class UnifiedOutputTests(unittest.TestCase):
+    def test_build_info_dict_includes_unified_capture_sections(self):
+        post = SocialPost(
+            platform="bilibili",
+            content_type="video",
+            source_url="https://www.bilibili.com/video/BV123",
+            resolved_url="https://www.bilibili.com/video/BV123",
+            post_id="BV123",
+            title="B站视频",
+            body="简介",
+            author_name="UP主",
+            author_id="42",
+            cover_url="https://i.example.com/cover.jpg",
+            duration_sec=66,
+            video_url=None,
+            image_urls=["https://i.example.com/cover.jpg"],
+            author_profile={
+                "id": "42",
+                "name": "UP主",
+                "avatar_url": "https://i.example.com/avatar.jpg",
+                "profile_url": "https://space.bilibili.com/42",
+            },
+            public_metrics={
+                "views": 100,
+                "likes": 9,
+                "comments": 3,
+                "shares": 2,
+                "coins": 1,
+                "favorites": 4,
+                "danmaku": 5,
+            },
+            owner_metrics={"impressions": None, "trend": []},
+            media={
+                "cover_url": "https://i.example.com/cover.jpg",
+                "image_urls": ["https://i.example.com/cover.jpg"],
+                "video_url": None,
+            },
+        )
+
+        info = build_info_dict(
+            post,
+            ExtractionContext(asr_provider="bailian", asr_model="qwen3-asr-flash"),
+            status="success",
+            errors=[],
+            transcript_text="字幕内容",
+            transcript_source="cloud_asr",
+            image_analysis=["图片分析"],
+        )
+
+        self.assertEqual(info["author"]["profile_url"], "https://space.bilibili.com/42")
+        self.assertEqual(info["public_metrics"]["views"], 100)
+        self.assertEqual(info["owner_metrics"]["trend"], [])
+        self.assertEqual(info["media"]["cover_url"], "https://i.example.com/cover.jpg")
+        self.assertEqual(info["transcript"]["source"], "cloud_asr")
+        self.assertEqual(info["transcript"]["text"], "字幕内容")
+        self.assertEqual(info["image_analysis"], ["图片分析"])
+
+
+class BilibiliPlatformAdapterTests(unittest.TestCase):
+    def test_view_payload_maps_to_social_post(self):
+        payload = {
+            "code": 0,
+            "data": {
+                "bvid": "BV1demo",
+                "aid": 123,
+                "title": "访谈标题",
+                "desc": "视频简介",
+                "pic": "http://i.example.com/cover.jpg",
+                "duration": 125,
+                "pubdate": 1710000000,
+                "owner": {"mid": 88, "name": "UP主", "face": "http://i.example.com/avatar.jpg"},
+                "tname": "知识",
+                "stat": {
+                    "view": 1000,
+                    "like": 100,
+                    "reply": 20,
+                    "share": 5,
+                    "favorite": 30,
+                    "coin": 6,
+                    "danmaku": 8,
+                },
+                "pages": [{"page": 1, "cid": 456, "part": "P1", "duration": 125}],
+            },
+        }
+
+        post = BilibiliPlatformAdapter.post_from_view_payload(
+            payload,
+            source_url="https://b23.tv/demo",
+            resolved_url="https://www.bilibili.com/video/BV1demo",
+        )
+
+        self.assertEqual(post.platform, "bilibili")
+        self.assertEqual(post.post_id, "BV1demo")
+        self.assertEqual(post.title, "访谈标题")
+        self.assertEqual(post.author_profile["profile_url"], "https://space.bilibili.com/88")
+        self.assertEqual(post.public_metrics["views"], 1000)
+        self.assertEqual(post.public_metrics["likes"], 100)
+        self.assertEqual(post.public_metrics["comments"], 20)
+        self.assertEqual(post.public_metrics["shares"], 5)
+        self.assertEqual(post.public_metrics["favorites"], 30)
+        self.assertEqual(post.public_metrics["coins"], 6)
+        self.assertEqual(post.public_metrics["danmaku"], 8)
+        self.assertEqual(post.extra["pages"][0]["cid"], 456)
+
+
+class OwnerAnalyticsCommandProviderTests(unittest.TestCase):
+    def test_builds_opencli_commands_for_owner_analytics(self):
+        provider = OwnerAnalyticsCommandProvider(opencli_command="opencli", bb_browser_command="bb-browser")
+
+        self.assertEqual(
+            provider.build_command("xiaohongshu", "recent_posts", limit=3),
+            ["opencli", "xiaohongshu", "creator-notes-summary", "--limit", "3", "-f", "json"],
+        )
+        self.assertEqual(
+            provider.build_command("douyin", "post_detail", post_id="123"),
+            ["opencli", "douyin", "stats", "123", "-f", "json"],
+        )
+        self.assertEqual(
+            provider.build_command("douyin", "account_stats"),
+            ["opencli", "douyin", "profile", "-f", "json"],
+        )
+        self.assertEqual(
+            provider.build_command("bilibili", "post_detail", post_id="BV1demo"),
+            ["bb-browser", "site", "bilibili/video", "BV1demo", "--json"],
+        )
+        self.assertEqual(
+            provider.build_command("bilibili", "profile"),
+            ["opencli", "bilibili", "me", "-f", "json"],
+        )
+        self.assertEqual(
+            provider.build_command("bilibili", "search_user", account_name="AI杰瑞斯", limit=5),
+            ["opencli", "bilibili", "search", "AI杰瑞斯", "--type", "user", "--limit", "5", "-f", "json"],
+        )
+        self.assertEqual(
+            provider.build_command("bilibili", "recent_posts", account_id="123", limit=5),
+            ["opencli", "bilibili", "user-videos", "123", "--limit", "5", "-f", "json"],
+        )
+
+    def test_parses_douyin_creator_profile_new_response_shape(self):
+        rows = parse_douyin_creator_profile(
+            {
+                "status_code": 0,
+                "user": {
+                    "uid": "123",
+                    "nickname": "AI 杰瑞斯",
+                    "unique_id": "risingjerrys",
+                    "follower_count": 2762,
+                    "following_count": 34,
+                    "aweme_count": 8,
+                    "favoriting_count": 247,
+                },
+            }
+        )
+
+        self.assertEqual(rows[0]["nickname"], "AI 杰瑞斯")
+        self.assertEqual(rows[0]["unique_id"], "risingjerrys")
+        self.assertEqual(rows[0]["follower_count"], 2762)
+
+    def test_parses_douyin_creator_items_preserving_string_ids_and_owner_metrics(self):
+        payload = {
+            "BaseResp": {"StatusCode": 0},
+            "items": [
+                {
+                    "id": "7629447135930404130",
+                    "description": "就在在刚刚，Claude 正式发布了opus-4.7！！！",
+                    "create_time": "1776376800",
+                    "metrics": {
+                        "view_count": "4077",
+                        "like_count": "65",
+                        "comment_count": "2",
+                        "share_count": "5",
+                        "favorite_count": "17",
+                        "avg_view_second": "22.372398",
+                        "completion_rate": "0.014755",
+                        "bounce_rate_2s": "0.286408",
+                        "cover_show": "146",
+                        "cover_click_rate": "0.952055",
+                        "subscribe_count": "6",
+                    },
+                    "cover": {"url_list": ["http://img.example.com/cover.webp"]},
+                }
+            ],
+        }
+
+        rows = parse_douyin_creator_items(payload, limit=5)
+
+        self.assertEqual(rows[0]["post_id"], "7629447135930404130")
+        self.assertEqual(rows[0]["metrics"]["views"], "4077")
+        self.assertEqual(rows[0]["metrics"]["favorites"], "17")
+        self.assertEqual(rows[0]["metrics"]["impressions"], "146")
+        self.assertEqual(rows[0]["metrics"]["followers_gained"], "6")
+        self.assertEqual(rows[0]["cover_url"], "https://img.example.com/cover.webp")
+
+    def test_parses_douyin_creator_post_detail_by_exact_id(self):
+        payload = {
+            "items": [
+                {"id": "7629447135930404130", "description": "目标作品", "metrics": {"view_count": "4077"}},
+                {"id": "7627446583856025601", "description": "另一个作品", "metrics": {"view_count": "1"}},
+            ]
+        }
+
+        detail = parse_douyin_creator_post_detail(payload, post_id="7629447135930404130")
+
+        self.assertEqual(detail["title"], "目标作品")
+        self.assertEqual(detail["metrics"]["views"], "4077")
+
+    def test_parses_douyin_creator_overview_with_labels_and_summary(self):
+        overview = parse_douyin_creator_overview(
+            {
+                "data": {
+                    "play": {"current_count": "123106", "last_period_incr": "44300", "option_list": []},
+                    "digg": {"current_count": "6014", "last_period_incr": "-396", "option_list": []},
+                }
+            }
+        )
+
+        self.assertEqual(overview["summary"]["play"], "123106")
+        self.assertEqual(overview["metrics"]["play"]["label"], "播放量")
+        self.assertEqual(overview["metrics"]["digg"]["label"], "作品点赞")
+
+    def test_douyin_owner_command_falls_back_to_same_origin_daemon(self):
+        provider = OwnerAnalyticsCommandProvider(opencli_command="opencli", bb_browser_command="bb-browser")
+
+        with (
+            patch("social_post_extractor_mcp.social_extractor.subprocess.run") as run_command,
+            patch.object(provider, "_run_douyin_creator_fallback") as fallback,
+        ):
+            run_command.return_value.returncode = 1
+            run_command.return_value.stdout = ""
+            run_command.return_value.stderr = "用户信息获取失败"
+            fallback.return_value = {"status": "success", "source": "opencli_daemon_same_origin_fallback"}
+
+            result = provider.run("douyin", "profile")
+
+        self.assertEqual(result["source"], "opencli_daemon_same_origin_fallback")
+        fallback.assert_called_once()
+
+    def test_douyin_owner_command_falls_back_on_empty_success_result(self):
+        provider = OwnerAnalyticsCommandProvider(opencli_command="opencli", bb_browser_command="bb-browser")
+
+        with (
+            patch("social_post_extractor_mcp.social_extractor.subprocess.run") as run_command,
+            patch.object(provider, "_run_douyin_creator_fallback") as fallback,
+        ):
+            run_command.return_value.returncode = 0
+            run_command.return_value.stdout = "[]"
+            run_command.return_value.stderr = ""
+            fallback.return_value = {"status": "success", "source": "opencli_daemon_same_origin_fallback"}
+
+            result = provider.run("douyin", "recent_posts", limit=5)
+
+        self.assertEqual(result["source"], "opencli_daemon_same_origin_fallback")
+        fallback.assert_called_once()
 
 
 if __name__ == "__main__":

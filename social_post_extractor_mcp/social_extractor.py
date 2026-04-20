@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import tempfile
 import asyncio
 import gzip
@@ -44,10 +45,26 @@ DEFAULT_CLEAN_PROVIDER = "bailian"
 DEFAULT_DASHSCOPE_SHORT_ASR_MODEL = "qwen3-asr-flash"
 DEFAULT_DASHSCOPE_LONG_ASR_MODEL = "qwen3-asr-flash-filetrans"
 DEFAULT_DASHSCOPE_SHORT_MAX_DURATION_SEC = 300
+DOUYIN_CREATOR_OVERVIEW_LABELS = {
+    "play": "播放量",
+    "profile": "主页访问量",
+    "digg": "作品点赞",
+    "share": "作品分享",
+    "comment": "作品评论",
+    "new_fans": "净增粉丝",
+    "fans": "粉丝相关",
+    "cancel_fans": "取消关注",
+    "account_search": "账号搜索",
+    "post_search": "作品搜索",
+    "music_create": "音乐使用",
+}
 
 VISION_PROMPT = (
-    "请逐字提取这张图片里可见的所有文字。保持原有的段落、列表、标题和换行。"
-    "不要总结，不要解释，不要补充图片里不存在的内容。"
+    "请分析这张小红书图片，输出结构化文本：\n"
+    "1. 可见文字：逐字提取图片里的文字，保持段落、列表、标题和换行。\n"
+    "2. 画面信息：简要描述主体、场景、物品、人物动作和布局。\n"
+    "3. 内容线索：列出对理解这篇笔记有帮助的视觉信息。\n"
+    "不要编造图片里不存在的内容，不要做营销式润色。"
 )
 
 OCR_FALLBACK_PROMPT = (
@@ -98,7 +115,51 @@ class SocialPost:
     page_url: Optional[str] = None
     xsec_token: Optional[str] = None
     tags: list[str] = field(default_factory=list)
+    author_profile: dict[str, Any] = field(default_factory=dict)
+    public_metrics: dict[str, Any] = field(default_factory=dict)
+    owner_metrics: dict[str, Any] = field(default_factory=dict)
+    media: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.author_profile:
+            self.author_profile = {
+                "id": self.author_id,
+                "name": self.author_name,
+                "handle": None,
+                "avatar_url": None,
+                "profile_url": None,
+                "followers": None,
+                "following": None,
+                "extra": {},
+            }
+        else:
+            self.author_profile = {
+                "id": self.author_profile.get("id", self.author_id),
+                "name": self.author_profile.get("name", self.author_name),
+                "handle": self.author_profile.get("handle"),
+                "avatar_url": self.author_profile.get("avatar_url"),
+                "profile_url": self.author_profile.get("profile_url"),
+                "followers": self.author_profile.get("followers"),
+                "following": self.author_profile.get("following"),
+                "extra": self.author_profile.get("extra", {}),
+                **{k: v for k, v in self.author_profile.items() if k not in {
+                    "id", "name", "handle", "avatar_url", "profile_url", "followers", "following", "extra"
+                }},
+            }
+        if not self.media:
+            self.media = {
+                "cover_url": self.cover_url,
+                "image_urls": self.image_urls,
+                "video_url": self.video_url,
+            }
+        else:
+            self.media = {
+                "cover_url": self.media.get("cover_url", self.cover_url),
+                "image_urls": self.media.get("image_urls", self.image_urls),
+                "video_url": self.media.get("video_url", self.video_url),
+                **{k: v for k, v in self.media.items() if k not in {"cover_url", "image_urls", "video_url"}},
+            }
 
 
 @dataclass
@@ -178,6 +239,58 @@ class XHSStateParser:
         duration_sec = ((video.get("capa") or {}).get("duration")) or None
 
         user = note.get("user") or {}
+        interact_info = note.get("interactInfo") or note.get("interact_info") or {}
+        avatar_url = _first_media_url(
+            user.get("avatar"),
+            user.get("avatarUrl"),
+            user.get("image"),
+            ((user.get("images") or "").split(",")[0] if isinstance(user.get("images"), str) else None),
+        )
+        user_id = user.get("userId") or user.get("user_id") or user.get("id")
+        red_id = user.get("redId") or user.get("red_id")
+        author_name = user.get("nickname") or user.get("nickName") or user.get("name")
+
+        author_profile = {
+            "id": user_id,
+            "name": author_name,
+            "handle": red_id,
+            "avatar_url": avatar_url,
+            "profile_url": f"https://www.xiaohongshu.com/user/profile/{user_id}" if user_id else None,
+            "description": user.get("desc") or user.get("description"),
+            "extra": user,
+        }
+        public_metrics = {
+            "likes": _first_existing(
+                interact_info,
+                "likedCount",
+                "liked_count",
+                "likeCount",
+                "like_count",
+            ),
+            "collects": _first_existing(
+                interact_info,
+                "collectedCount",
+                "collected_count",
+                "collectCount",
+                "collect_count",
+            ),
+            "comments": _first_existing(
+                interact_info,
+                "commentCount",
+                "comment_count",
+            ),
+            "shares": _first_existing(
+                interact_info,
+                "shareCount",
+                "share_count",
+            ),
+        }
+        media = {
+            "cover_url": cover_url,
+            "image_urls": image_urls,
+            "video_url": video_url,
+        }
+
         tags = []
         for tag in note.get("tagList") or []:
             if isinstance(tag, dict) and tag.get("name"):
@@ -185,16 +298,17 @@ class XHSStateParser:
 
         note_type = note.get("type") or "normal"
         content_type = "video" if note_type == "video" or video_url else "image_note"
+        title = (note.get("title") or "").strip() or _extract_html_title(html) or note_id
         return SocialPost(
             platform="xiaohongshu",
             content_type=content_type,
             source_url=source_url,
             resolved_url=resolved_url,
             post_id=note_id,
-            title=(note.get("title") or "").strip() or note_id,
+            title=title,
             body=(note.get("desc") or "").strip(),
-            author_name=(user.get("nickname") or user.get("nickName")),
-            author_id=user.get("userId"),
+            author_name=author_name,
+            author_id=user_id,
             publish_time=note.get("time"),
             cover_url=cover_url,
             duration_sec=duration_sec,
@@ -203,7 +317,10 @@ class XHSStateParser:
             page_url=resolved_url,
             xsec_token=note.get("xsecToken") or _extract_xsec_token(resolved_url),
             tags=tags,
-            extra={"note_type": note_type},
+            author_profile=author_profile,
+            public_metrics=public_metrics,
+            media=media,
+            extra={"note_type": note_type, "interact_info": interact_info},
         )
 
     @staticmethod
@@ -221,11 +338,15 @@ class XiaoHongShuPlatformAdapter(PlatformAdapter):
         source_url = _extract_first_url(share_text)
         response = requests.get(source_url, headers=HEADERS, timeout=30, allow_redirects=True)
         response.raise_for_status()
-        return XHSStateParser.parse_html(
+        post = XHSStateParser.parse_html(
             html=response.text,
             source_url=source_url,
             resolved_url=response.url,
         )
+        fallback_title = _extract_title_from_share_text(share_text)
+        if fallback_title and (not post.title or post.title == post.post_id):
+            post.title = fallback_title
+        return post
 
 
 class DouyinPlatformAdapter(PlatformAdapter):
@@ -267,6 +388,7 @@ class DouyinPlatformAdapter(PlatformAdapter):
             video_url = _normalize_media_url(url_list[0].replace("playwm", "play"))
 
         author = item.get("author") or {}
+        statistics = item.get("statistics") or {}
         cover = video.get("cover") or {}
         cover_urls = cover.get("url_list") or []
         duration_ms = video.get("duration")
@@ -276,6 +398,36 @@ class DouyinPlatformAdapter(PlatformAdapter):
 
         title = (item.get("desc") or "").strip() or f"douyin_{video_id}"
         title = re.sub(r'[\\/:*?"<>|]', "_", title)
+        cover_url = _normalize_media_url(cover_urls[0]) if cover_urls else None
+        sec_uid = author.get("sec_uid")
+        uid = author.get("uid")
+        unique_id = author.get("unique_id")
+        avatar_url = _first_media_url(
+            *((author.get("avatar_thumb") or {}).get("url_list") or []),
+            *((author.get("avatar_medium") or {}).get("url_list") or []),
+            *((author.get("avatar_larger") or {}).get("url_list") or []),
+        )
+        author_profile = {
+            "id": uid or sec_uid,
+            "name": author.get("nickname") or unique_id,
+            "handle": unique_id,
+            "sec_uid": sec_uid,
+            "avatar_url": avatar_url,
+            "profile_url": f"https://www.douyin.com/user/{sec_uid}" if sec_uid else None,
+            "extra": author,
+        }
+        public_metrics = {
+            "views": statistics.get("play_count"),
+            "likes": statistics.get("digg_count"),
+            "comments": statistics.get("comment_count"),
+            "shares": statistics.get("share_count"),
+            "collects": statistics.get("collect_count"),
+        }
+        media = {
+            "cover_url": cover_url,
+            "image_urls": [cover_url] if cover_url else [],
+            "video_url": video_url,
+        }
 
         return SocialPost(
             platform="douyin",
@@ -285,16 +437,186 @@ class DouyinPlatformAdapter(PlatformAdapter):
             post_id=video_id,
             title=title,
             body=(item.get("desc") or "").strip(),
-            author_name=author.get("nickname") or author.get("unique_id"),
-            author_id=author.get("uid") or author.get("sec_uid"),
+            author_name=author_profile["name"],
+            author_id=author_profile["id"],
             publish_time=item.get("create_time"),
-            cover_url=_normalize_media_url(cover_urls[0]) if cover_urls else None,
+            cover_url=cover_url,
             duration_sec=duration_sec,
             video_url=video_url,
-            image_urls=[_normalize_media_url(cover_urls[0])] if cover_urls else [],
+            image_urls=media["image_urls"],
             page_url=share_url,
-            extra={"aweme_type": item.get("aweme_type")},
+            author_profile=author_profile,
+            public_metrics=public_metrics,
+            media=media,
+            extra={"aweme_type": item.get("aweme_type"), "statistics": statistics},
         )
+
+
+class BilibiliPlatformAdapter(PlatformAdapter):
+    def can_handle(self, share_text: str) -> bool:
+        lower = share_text.lower()
+        return "bilibili.com" in lower or "b23.tv" in lower or _extract_bilibili_bvid(share_text) is not None
+
+    def fetch_post(self, share_text: str) -> SocialPost:
+        source_url = _extract_first_url_or_none(share_text)
+        bvid = _extract_bilibili_bvid(share_text)
+        resolved_url = source_url or (f"https://www.bilibili.com/video/{bvid}" if bvid else "")
+
+        if source_url:
+            response = requests.get(source_url, headers=HEADERS, timeout=30, allow_redirects=True)
+            response.raise_for_status()
+            resolved_url = response.url
+            bvid = _extract_bilibili_bvid(resolved_url) or bvid
+
+        if not bvid:
+            raise ValueError("未找到 Bilibili BV 号")
+
+        view_response = requests.get(
+            "https://api.bilibili.com/x/web-interface/view",
+            headers={**HEADERS, "Referer": resolved_url or f"https://www.bilibili.com/video/{bvid}"},
+            params={"bvid": bvid},
+            timeout=30,
+        )
+        view_response.raise_for_status()
+        post = self.post_from_view_payload(
+            view_response.json(),
+            source_url=source_url or f"https://www.bilibili.com/video/{bvid}",
+            resolved_url=resolved_url or f"https://www.bilibili.com/video/{bvid}",
+        )
+        self._enrich_video_access(post)
+        return post
+
+    @staticmethod
+    def post_from_view_payload(payload: dict[str, Any], *, source_url: str, resolved_url: str) -> SocialPost:
+        if payload.get("code") != 0:
+            raise ValueError(f"Bilibili view API 返回异常: {payload}")
+
+        data = payload.get("data") or {}
+        bvid = data.get("bvid")
+        if not bvid:
+            raise ValueError("Bilibili view API 未返回 BV 号")
+
+        owner = data.get("owner") or {}
+        stat = data.get("stat") or {}
+        mid = owner.get("mid")
+        cover_url = _normalize_media_url(data.get("pic"))
+        author_profile = {
+            "id": str(mid) if mid is not None else None,
+            "name": owner.get("name"),
+            "handle": owner.get("name"),
+            "avatar_url": _normalize_media_url(owner.get("face")),
+            "profile_url": f"https://space.bilibili.com/{mid}" if mid is not None else None,
+            "extra": owner,
+        }
+        public_metrics = {
+            "views": stat.get("view"),
+            "likes": stat.get("like"),
+            "comments": stat.get("reply"),
+            "shares": stat.get("share"),
+            "favorites": stat.get("favorite"),
+            "coins": stat.get("coin"),
+            "danmaku": stat.get("danmaku"),
+        }
+        media = {
+            "cover_url": cover_url,
+            "image_urls": [cover_url] if cover_url else [],
+            "video_url": None,
+        }
+
+        return SocialPost(
+            platform="bilibili",
+            content_type="video",
+            source_url=source_url,
+            resolved_url=resolved_url,
+            post_id=bvid,
+            title=(data.get("title") or bvid).strip(),
+            body=(data.get("desc") or "").strip(),
+            author_name=owner.get("name"),
+            author_id=str(mid) if mid is not None else None,
+            publish_time=data.get("pubdate"),
+            cover_url=cover_url,
+            duration_sec=data.get("duration"),
+            video_url=None,
+            image_urls=media["image_urls"],
+            page_url=resolved_url,
+            author_profile=author_profile,
+            public_metrics=public_metrics,
+            media=media,
+            extra={
+                "aid": data.get("aid"),
+                "category": data.get("tname"),
+                "copyright": data.get("copyright"),
+                "pages": data.get("pages") or [],
+            },
+        )
+
+    def _enrich_video_access(self, post: SocialPost) -> None:
+        pages = post.extra.get("pages") or []
+        first_page = pages[0] if pages and isinstance(pages[0], dict) else {}
+        cid = first_page.get("cid")
+        if not cid:
+            return
+
+        subtitle_text = self._fetch_subtitle_text(post.post_id, cid, post.page_url or post.resolved_url)
+        if subtitle_text:
+            post.extra["subtitle_text"] = subtitle_text
+
+        media_url = self._fetch_playable_audio_or_video_url(post.post_id, cid, post.page_url or post.resolved_url)
+        if media_url:
+            post.video_url = media_url
+            post.media["video_url"] = media_url
+
+    def _fetch_subtitle_text(self, bvid: str, cid: Any, referer: str) -> Optional[str]:
+        try:
+            response = requests.get(
+                "https://api.bilibili.com/x/player/v2",
+                headers={**HEADERS, "Referer": referer},
+                params={"bvid": bvid, "cid": cid},
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            subtitles = (((payload.get("data") or {}).get("subtitle") or {}).get("subtitles") or [])
+            for subtitle in subtitles:
+                subtitle_url = subtitle.get("subtitle_url")
+                if not subtitle_url:
+                    continue
+                subtitle_url = _normalize_media_url(_ensure_url_scheme(subtitle_url))
+                subtitle_response = requests.get(subtitle_url, headers={**HEADERS, "Referer": referer}, timeout=30)
+                subtitle_response.raise_for_status()
+                body = subtitle_response.json().get("body") or []
+                parts = [item.get("content", "").strip() for item in body if item.get("content")]
+                if parts:
+                    return "\n".join(parts)
+        except Exception:
+            return None
+        return None
+
+    def _fetch_playable_audio_or_video_url(self, bvid: str, cid: Any, referer: str) -> Optional[str]:
+        try:
+            response = requests.get(
+                "https://api.bilibili.com/x/player/playurl",
+                headers={**HEADERS, "Referer": referer},
+                params={"bvid": bvid, "cid": cid, "qn": 16, "fnval": 16},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json().get("data") or {}
+            dash = data.get("dash") or {}
+            for item in dash.get("audio") or []:
+                url = item.get("baseUrl") or item.get("base_url")
+                if url:
+                    return _normalize_media_url(url)
+            for item in dash.get("video") or []:
+                url = item.get("baseUrl") or item.get("base_url")
+                if url:
+                    return _normalize_media_url(url)
+            durl = data.get("durl") or []
+            if durl and isinstance(durl[0], dict) and durl[0].get("url"):
+                return _normalize_media_url(durl[0]["url"])
+        except Exception:
+            return None
+        return None
 
 
 class SocialExtractorService:
@@ -306,19 +628,20 @@ class SocialExtractorService:
         vision_providers: Optional[dict[str, Any]] = None,
         ocr_provider: Any = None,
     ):
-        self.platform_adapters = platform_adapters or [
+        self.platform_adapters = platform_adapters if platform_adapters is not None else [
             DouyinPlatformAdapter(),
             XiaoHongShuPlatformAdapter(),
+            BilibiliPlatformAdapter(),
         ]
-        self.asr_providers = asr_providers or {
+        self.asr_providers = asr_providers if asr_providers is not None else {
             "siliconflow": SiliconFlowASRProvider(),
             "dashscope": DashScopeASRProvider(),
             "bailian": DashScopeASRProvider(),
             "doubao": OpenAICompatibleASRProvider("doubao"),
             "volcengine_speech": VolcengineSpeechASRProvider(),
         }
-        self.cleanup_providers = cleanup_providers or build_llm_provider_registry()
-        self.vision_providers = vision_providers or build_llm_provider_registry()
+        self.cleanup_providers = cleanup_providers if cleanup_providers is not None else build_llm_provider_registry()
+        self.vision_providers = vision_providers if vision_providers is not None else build_llm_provider_registry()
         self.ocr_provider = ocr_provider or LLMOcrProvider(self.vision_providers)
 
     def parse_social_post(self, share_text: str) -> SocialPost:
@@ -340,6 +663,12 @@ class SocialExtractorService:
     ) -> dict[str, Any]:
         post = self.parse_social_post(share_text)
         resolved_asr_provider = asr_provider or os.getenv("ASR_PROVIDER") or DEFAULT_ASR_PROVIDER
+        resolved_vision_provider = vision_provider or os.getenv("VISION_PROVIDER") or self._default_vision_provider()
+        if resolved_vision_provider and resolved_vision_provider not in self.vision_providers:
+            resolved_vision_provider = None
+        resolved_clean_provider = clean_provider or os.getenv("CLEAN_PROVIDER") or self._default_cleanup_provider()
+        if resolved_clean_provider and resolved_clean_provider not in self.cleanup_providers:
+            resolved_clean_provider = None
         context = ExtractionContext(
             asr_provider=resolved_asr_provider,
             asr_model=(
@@ -348,9 +677,9 @@ class SocialExtractorService:
                 or default_model_for_provider(resolved_asr_provider, "asr")
                 or DEFAULT_ASR_MODEL
             ),
-            vision_provider=vision_provider or os.getenv("VISION_PROVIDER") or self._default_vision_provider(),
+            vision_provider=resolved_vision_provider,
             vision_model=None,
-            clean_provider=clean_provider or os.getenv("CLEAN_PROVIDER") or self._default_cleanup_provider(),
+            clean_provider=resolved_clean_provider,
             clean_model=None,
         )
         context.vision_model = (
@@ -373,14 +702,21 @@ class SocialExtractorService:
         )
 
         raw_transcript = None
+        transcript_source = None
         image_texts: list[str] = []
         errors: list[str] = []
 
         if post.content_type == "video":
-            try:
-                raw_transcript = self._extract_video_text(post, context)
-            except Exception as exc:
-                raise RuntimeError(f"视频转写失败: {exc}") from exc
+            platform_subtitle = post.extra.get("subtitle_text")
+            if platform_subtitle:
+                raw_transcript = platform_subtitle
+                transcript_source = "platform_subtitle"
+            else:
+                try:
+                    raw_transcript = self._extract_video_text(post, context)
+                    transcript_source = "cloud_asr"
+                except Exception as exc:
+                    raise RuntimeError(f"视频转写失败: {exc}") from exc
         else:
             image_texts, image_errors = self._extract_image_texts(post, context)
             errors.extend(image_errors)
@@ -399,6 +735,7 @@ class SocialExtractorService:
             artifact_dir=artifact_dir,
             cleaned_script=cleaned_script,
             raw_transcript=raw_transcript,
+            transcript_source=transcript_source,
             image_texts=image_texts,
             status=status,
             errors=errors,
@@ -485,6 +822,7 @@ class SocialExtractorService:
         artifact_dir: Path,
         cleaned_script: str,
         raw_transcript: Optional[str],
+        transcript_source: Optional[str],
         image_texts: list[str],
         status: str,
         errors: list[str],
@@ -500,7 +838,15 @@ class SocialExtractorService:
         )
         script_path.write_text(script_text, encoding="utf-8")
 
-        info = build_info_dict(post, context, status=status, errors=errors)
+        info = build_info_dict(
+            post,
+            context,
+            status=status,
+            errors=errors,
+            transcript_text=raw_transcript,
+            transcript_source=transcript_source,
+            image_analysis=image_texts,
+        )
         info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
         return ArtifactPaths(script_path=script_path, info_path=info_path)
 
@@ -576,6 +922,7 @@ class DashScopeASRProvider:
             api_key=api_key,
             model_name=model,
             filename_hint=_default_dashscope_media_filename(post),
+            referer_url=post.page_url or post.resolved_url,
         )
         if model == DEFAULT_DASHSCOPE_SHORT_ASR_MODEL:
             return run_dashscope_multimodal_asr(
@@ -743,6 +1090,445 @@ class LLMOcrProvider:
                 provider.mode = original_mode
 
 
+class OwnerAnalyticsCommandProvider:
+    """Wrap browser-backed CLIs for creator-center and own-account analytics."""
+
+    def __init__(self, *, opencli_command: str = "opencli", bb_browser_command: str = "bb-browser"):
+        self.opencli_command = opencli_command
+        self.bb_browser_command = bb_browser_command
+
+    def build_command(
+        self,
+        platform: str,
+        report_type: str,
+        *,
+        limit: Optional[int] = None,
+        post_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+        account_name: Optional[str] = None,
+        period: Optional[str] = None,
+    ) -> list[str]:
+        platform = platform.lower().strip()
+        report_type = report_type.lower().strip()
+        limit_arg = str(limit or 10)
+
+        if platform in {"xiaohongshu", "xhs", "rednote"}:
+            if report_type in {"recent_posts", "posts", "summary"}:
+                return [
+                    self.opencli_command,
+                    "xiaohongshu",
+                    "creator-notes-summary",
+                    "--limit",
+                    limit_arg,
+                    "-f",
+                    "json",
+                ]
+            if report_type in {"post_detail", "detail", "stats"}:
+                if not post_id:
+                    raise ValueError("小红书单篇复盘需要 post_id")
+                return [
+                    self.opencli_command,
+                    "xiaohongshu",
+                    "creator-note-detail",
+                    post_id,
+                    "-f",
+                    "json",
+                ]
+            if report_type in {"profile", "account"}:
+                return [self.opencli_command, "xiaohongshu", "creator-profile", "-f", "json"]
+            if report_type in {"account_stats", "creator_stats"}:
+                command = [self.opencli_command, "xiaohongshu", "creator-stats"]
+                if period:
+                    command.extend(["--period", period])
+                return command + ["-f", "json"]
+
+        if platform in {"douyin", "tiktok_cn"}:
+            if report_type in {"recent_posts", "posts", "videos"}:
+                return [self.opencli_command, "douyin", "videos", "--limit", limit_arg, "-f", "json"]
+            if report_type in {"post_detail", "detail", "stats"}:
+                if not post_id:
+                    raise ValueError("抖音单条复盘需要 post_id")
+                return [self.opencli_command, "douyin", "stats", post_id, "-f", "json"]
+            if report_type in {"profile", "account"}:
+                return [self.opencli_command, "douyin", "profile", "-f", "json"]
+            if report_type in {"account_stats", "creator_stats"}:
+                return [self.opencli_command, "douyin", "profile", "-f", "json"]
+
+        if platform in {"bilibili", "bili"}:
+            if report_type in {"profile", "account"}:
+                return [self.opencli_command, "bilibili", "me", "-f", "json"]
+            if report_type in {"search_user", "user_search"}:
+                query = account_name or post_id
+                if not query:
+                    raise ValueError("Bilibili 用户搜索需要 account_name")
+                return [
+                    self.opencli_command,
+                    "bilibili",
+                    "search",
+                    query,
+                    "--type",
+                    "user",
+                    "--limit",
+                    limit_arg,
+                    "-f",
+                    "json",
+                ]
+            if report_type in {"recent_posts", "posts", "videos", "user_videos"}:
+                uid = account_id or post_id
+                if not uid:
+                    raise ValueError("Bilibili 投稿列表需要 account_id 或 uid")
+                return [
+                    self.opencli_command,
+                    "bilibili",
+                    "user-videos",
+                    uid,
+                    "--limit",
+                    limit_arg,
+                    "-f",
+                    "json",
+                ]
+            if report_type in {"post_detail", "detail", "stats", "video"}:
+                if not post_id:
+                    raise ValueError("Bilibili 单条复盘需要 BV 号或视频 ID")
+                return [self.bb_browser_command, "site", "bilibili/video", post_id, "--json"]
+
+        raise ValueError(f"暂不支持 {platform}/{report_type} 的账号复盘命令")
+
+    def run(
+        self,
+        platform: str,
+        report_type: str,
+        *,
+        limit: Optional[int] = None,
+        post_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+        account_name: Optional[str] = None,
+        period: Optional[str] = None,
+        timeout: int = 120,
+    ) -> dict[str, Any]:
+        command = self.build_command(
+            platform,
+            report_type,
+            limit=limit,
+            post_id=post_id,
+            account_id=account_id,
+            account_name=account_name,
+            period=period,
+        )
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        output = completed.stdout.strip()
+        if completed.returncode != 0:
+            error = (completed.stderr or output or "账号复盘命令执行失败").strip()
+            if platform.lower().strip() in {"douyin", "tiktok_cn"}:
+                return self._run_douyin_creator_fallback(
+                    report_type,
+                    limit=limit,
+                    post_id=post_id,
+                    period=period,
+                    timeout=timeout,
+                    original_command=command,
+                    original_error=error,
+                )
+            raise RuntimeError(error)
+        try:
+            data = json.loads(output) if output else None
+        except json.JSONDecodeError:
+            data = {"text": output}
+        if platform.lower().strip() in {"douyin", "tiktok_cn"} and _douyin_opencli_result_needs_fallback(
+            report_type,
+            data,
+        ):
+            return self._run_douyin_creator_fallback(
+                report_type,
+                limit=limit,
+                post_id=post_id,
+                period=period,
+                timeout=timeout,
+                original_command=command,
+                original_error="OpenCLI returned an empty or legacy-shaped Douyin result",
+            )
+        return {
+            "status": "success",
+            "platform": platform,
+            "report_type": report_type,
+            "command": command,
+            "data": data,
+        }
+
+    def _run_douyin_creator_fallback(
+        self,
+        report_type: str,
+        *,
+        limit: Optional[int],
+        post_id: Optional[str],
+        period: Optional[str],
+        timeout: int,
+        original_command: list[str],
+        original_error: str,
+    ) -> dict[str, Any]:
+        """Read Douyin creator data from a same-origin OpenCLI daemon tab.
+
+        OpenCLI 1.5.x Douyin adapters evaluate fetches from a blank data: tab and
+        also expect older response field names. The fallback navigates the
+        automation tab to creator.douyin.com first, then returns raw JSON text so
+        Python can parse 19-digit aweme IDs without JavaScript precision loss.
+        """
+
+        tab_id = self._opencli_daemon_navigate(
+            "https://creator.douyin.com/creator-micro/home",
+            timeout=timeout,
+        )
+        report_type = report_type.lower().strip()
+
+        if report_type in {"profile", "account"}:
+            payload = self._douyin_creator_fetch_json(
+                "https://creator.douyin.com/web/api/media/user/info/?aid=1128",
+                tab_id=tab_id,
+                timeout=timeout,
+            )
+            data = parse_douyin_creator_profile(payload)
+        elif report_type in {"recent_posts", "posts", "videos"}:
+            payload = self._douyin_creator_fetch_json(
+                _douyin_creator_item_list_url(limit or 10),
+                tab_id=tab_id,
+                timeout=timeout,
+            )
+            data = parse_douyin_creator_items(payload, limit=limit or 10)
+        elif report_type in {"post_detail", "detail", "stats"}:
+            if not post_id:
+                raise ValueError("抖音单条复盘需要 post_id")
+            payload = self._douyin_creator_fetch_json(
+                _douyin_creator_item_list_url(max(limit or 50, 50)),
+                tab_id=tab_id,
+                timeout=timeout,
+            )
+            data = parse_douyin_creator_post_detail(payload, post_id=post_id)
+        elif report_type in {"account_stats", "creator_stats", "summary"}:
+            days_type = "2" if period in {"30", "30d", "month", "近30日"} else "1"
+            payload = self._douyin_creator_fetch_json(
+                f"https://creator.douyin.com/aweme/janus/creator/data/overview/all/?last_days_type={days_type}",
+                tab_id=tab_id,
+                timeout=timeout,
+            )
+            data = parse_douyin_creator_overview(payload)
+        else:
+            raise ValueError(f"暂不支持 douyin/{report_type} 的账号复盘命令")
+
+        return {
+            "status": "success",
+            "platform": "douyin",
+            "report_type": report_type,
+            "command": original_command,
+            "source": "opencli_daemon_same_origin_fallback",
+            "fallback_from_error": original_error,
+            "data": data,
+        }
+
+    def _opencli_daemon_navigate(self, url: str, *, timeout: int) -> int:
+        status = self._opencli_daemon_get("/status", timeout=timeout)
+        if not status.get("extensionConnected"):
+            raise RuntimeError("OpenCLI daemon 已启动，但浏览器扩展未连接")
+        data = self._opencli_daemon_command(
+            "navigate",
+            timeout=timeout,
+            url=url,
+        )
+        tab_id = data.get("tabId")
+        if tab_id is None:
+            raise RuntimeError("OpenCLI daemon 未返回 tabId")
+        return int(tab_id)
+
+    def _douyin_creator_fetch_json(self, url: str, *, tab_id: int, timeout: int) -> dict[str, Any]:
+        code = (
+            "(async () => {"
+            f"const r = await fetch({json.dumps(url)}, {{credentials: 'include'}});"
+            "const text = await r.text();"
+            "return {ok: r.ok, status: r.status, text};"
+            "})()"
+        )
+        result = self._opencli_daemon_command(
+            "exec",
+            timeout=timeout,
+            tabId=tab_id,
+            code=code,
+        )
+        if not result.get("ok"):
+            raise RuntimeError(f"抖音创作者中心接口请求失败: HTTP {result.get('status')}")
+        text = result.get("text") or ""
+        try:
+            return json.loads(text, parse_int=str)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"抖音创作者中心接口返回非 JSON: {text[:200]}") from exc
+
+    def _opencli_daemon_get(self, path: str, *, timeout: int) -> dict[str, Any]:
+        daemon_url = self._opencli_daemon_url()
+        response = requests.get(
+            f"{daemon_url}{path}",
+            headers={"X-OpenCLI": "1"},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def _opencli_daemon_command(self, action: str, *, timeout: int, **params: Any) -> dict[str, Any]:
+        daemon_url = self._opencli_daemon_url()
+        payload = {
+            "id": f"social_post_extractor_{uuid.uuid4().hex}",
+            "action": action,
+            **params,
+        }
+        response = requests.post(
+            f"{daemon_url}/command",
+            headers={"Content-Type": "application/json", "X-OpenCLI": "1"},
+            json=payload,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if not result.get("ok"):
+            raise RuntimeError(result.get("error") or "OpenCLI daemon command failed")
+        return result.get("data") or {}
+
+    @staticmethod
+    def _opencli_daemon_url() -> str:
+        port = os.getenv("OPENCLI_DAEMON_PORT", "19825")
+        return f"http://127.0.0.1:{port}"
+
+
+def _douyin_creator_item_list_url(limit: int) -> str:
+    return (
+        "https://creator.douyin.com/web/api/creator/item/list"
+        f"?count={int(limit)}"
+        "&fields=visibility%2Cmetrics%2Creview"
+        "&status_list%5B%5D=102"
+        "&status_list%5B%5D=143"
+        "&need_long_article=true"
+    )
+
+
+def _douyin_opencli_result_needs_fallback(report_type: str, data: Any) -> bool:
+    report_type = report_type.lower().strip()
+    if report_type in {"recent_posts", "posts", "videos"}:
+        return data == [] or data is None
+    if report_type in {"profile", "account"}:
+        return data == [] or data is None
+    if report_type in {"post_detail", "detail", "stats"}:
+        return data == [] or data is None
+    return False
+
+
+def parse_douyin_creator_profile(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    user = payload.get("user") or payload.get("user_info") or {}
+    if not isinstance(user, dict) or not user:
+        raise RuntimeError("抖音创作者中心未返回用户信息")
+    return [
+        {
+            "uid": user.get("uid") or user.get("sec_uid"),
+            "nickname": user.get("nickname"),
+            "unique_id": user.get("unique_id"),
+            "signature": user.get("signature"),
+            "follower_count": user.get("follower_count"),
+            "following_count": user.get("following_count"),
+            "aweme_count": user.get("aweme_count"),
+            "favoriting_count": user.get("favoriting_count"),
+            "total_favorited": user.get("total_favorited"),
+        }
+    ]
+
+
+def parse_douyin_creator_items(payload: dict[str, Any], *, limit: int) -> list[dict[str, Any]]:
+    raw_items = payload.get("items") or payload.get("aweme_list") or []
+    if not isinstance(raw_items, list):
+        raw_items = []
+    rows = []
+    for item in raw_items[:limit]:
+        if not isinstance(item, dict):
+            continue
+        metrics = item.get("metrics") or item.get("statistics") or {}
+        post_id = item.get("id") or item.get("aweme_id")
+        if post_id is not None:
+            post_id = str(post_id)
+        rows.append(
+            {
+                "post_id": post_id,
+                "title": item.get("description") or item.get("desc") or "",
+                "create_time": item.get("create_time"),
+                "created_at": _format_epoch_seconds(item.get("create_time")),
+                "url": f"https://www.douyin.com/video/{post_id}" if post_id else None,
+                "cover_url": _first_media_url(*(((item.get("cover") or item.get("Cover") or {}).get("url_list")) or [])),
+                "visibility": item.get("visibility"),
+                "review": item.get("review"),
+                "metrics": normalize_douyin_creator_metrics(metrics),
+            }
+        )
+    return rows
+
+
+def parse_douyin_creator_post_detail(payload: dict[str, Any], *, post_id: str) -> dict[str, Any]:
+    rows = parse_douyin_creator_items(payload, limit=10_000)
+    for row in rows:
+        if row.get("post_id") == str(post_id):
+            return row
+    raise RuntimeError(f"抖音创作者中心列表中未找到作品 {post_id}")
+
+
+def parse_douyin_creator_overview(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data") or {}
+    metrics = {}
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if not isinstance(value, dict) or "current_count" not in value:
+                continue
+            metrics[key] = {
+                "label": DOUYIN_CREATOR_OVERVIEW_LABELS.get(key, key),
+                "current_count": value.get("current_count"),
+                "last_period_incr": value.get("last_period_incr"),
+                "trend": value.get("option_list") or [],
+            }
+    summary = {key: value.get("current_count") for key, value in metrics.items()}
+    return {"summary": summary, "metrics": metrics}
+
+
+def normalize_douyin_creator_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(metrics, dict):
+        return {}
+    return {
+        "views": _first_existing(metrics, "view_count", "play_count"),
+        "likes": _first_existing(metrics, "like_count", "digg_count"),
+        "comments": _first_existing(metrics, "comment_count"),
+        "shares": _first_existing(metrics, "share_count"),
+        "impressions": _first_existing(metrics, "cover_show"),
+        "favorites": _first_existing(metrics, "favorite_count", "collect_count"),
+        "downloads": _first_existing(metrics, "download_count"),
+        "danmaku": _first_existing(metrics, "danmaku_count"),
+        "homepage_visits": _first_existing(metrics, "homepage_visit_count"),
+        "followers_gained": _first_existing(metrics, "subscribe_count"),
+        "followers_lost": _first_existing(metrics, "unsubscribe_count"),
+        "avg_view_seconds": _first_existing(metrics, "avg_view_second"),
+        "avg_view_proportion": _first_existing(metrics, "avg_view_proportion"),
+        "completion_rate": _first_existing(metrics, "completion_rate"),
+        "completion_rate_5s": _first_existing(metrics, "completion_rate_5s"),
+        "bounce_rate_2s": _first_existing(metrics, "bounce_rate_2s"),
+        "cover_show": _first_existing(metrics, "cover_show"),
+        "cover_click_rate": _first_existing(metrics, "cover_click_rate"),
+        "raw": metrics,
+    }
+
+
+def _format_epoch_seconds(value: Any) -> Optional[str]:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return None
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).astimezone().isoformat()
+
+
 def rule_based_cleanup(post: SocialPost, raw_transcript: Optional[str], image_texts: list[str]) -> str:
     parts = []
     if post.body:
@@ -788,7 +1574,27 @@ def build_script_markdown(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_info_dict(post: SocialPost, context: ExtractionContext, *, status: str, errors: list[str]) -> dict[str, Any]:
+def build_info_dict(
+    post: SocialPost,
+    context: ExtractionContext,
+    *,
+    status: str,
+    errors: list[str],
+    transcript_text: Optional[str] = None,
+    transcript_source: Optional[str] = None,
+    image_analysis: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    author = {
+        "name": post.author_name,
+        "id": post.author_id,
+        **(post.author_profile or {}),
+    }
+    media = {
+        "cover_url": post.cover_url,
+        "image_urls": post.image_urls,
+        "video_url": post.video_url,
+        **(post.media or {}),
+    }
     return {
         "platform": post.platform,
         "content_type": post.content_type,
@@ -797,10 +1603,15 @@ def build_info_dict(post: SocialPost, context: ExtractionContext, *, status: str
         "post_id": post.post_id,
         "title": post.title,
         "body": post.body,
-        "author": {
-            "name": post.author_name,
-            "id": post.author_id,
+        "author": author,
+        "public_metrics": post.public_metrics,
+        "owner_metrics": post.owner_metrics,
+        "media": media,
+        "transcript": {
+            "source": transcript_source,
+            "text": transcript_text,
         },
+        "image_analysis": image_analysis or [],
         "publish_time": post.publish_time,
         "cover_url": post.cover_url,
         "duration_sec": post.duration_sec,
@@ -1068,13 +1879,17 @@ def stream_remote_media_to_dashscope_oss(
     api_key: str,
     model_name: str,
     filename_hint: str,
+    referer_url: Optional[str] = None,
 ) -> str:
     policy_data = get_dashscope_upload_policy(api_key, model_name)
+    media_headers = dict(HEADERS)
+    if referer_url:
+        media_headers["Referer"] = referer_url
     with requests.Session() as media_session:
         media_session.trust_env = False
         with media_session.get(
             _normalize_media_url(source_url),
-            headers=HEADERS,
+            headers=media_headers,
             timeout=120,
             stream=True,
             allow_redirects=True,
@@ -1523,19 +2338,90 @@ def _join_api_url(base_url: str, suffix: str) -> str:
     return f"{base_url.rstrip('/')}/{suffix.lstrip('/')}"
 
 
+def _first_existing(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in data:
+            return data.get(key)
+    return None
+
+
+def _first_media_url(*values: Optional[str]) -> Optional[str]:
+    for value in values:
+        if value:
+            return _normalize_media_url(value)
+    return None
+
+
+def _ensure_url_scheme(url: str) -> str:
+    if url.startswith("//"):
+        return "https:" + url
+    return url
+
+
 def _normalize_media_url(url: Optional[str]) -> Optional[str]:
     if not url:
         return url
+    url = _ensure_url_scheme(str(url).strip())
     if url.startswith("http://"):
         return "https://" + url[len("http://") :]
     return url
 
 
-def _extract_first_url(text: str) -> str:
+def _extract_first_url_or_none(text: str) -> Optional[str]:
     urls = re.findall(r"http[s]?://(?:[a-zA-Z0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", text)
-    if not urls:
+    return urls[0] if urls else None
+
+
+def _extract_first_url(text: str) -> str:
+    url = _extract_first_url_or_none(text)
+    if not url:
         raise ValueError("未找到有效链接")
-    return urls[0]
+    return url
+
+
+def _extract_title_from_share_text(text: str) -> Optional[str]:
+    without_urls = re.sub(
+        r"http[s]?://(?:[a-zA-Z0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+        " ",
+        text,
+    )
+    for raw_line in without_urls.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip(" \t\r\n:-_")
+        if not line:
+            continue
+        lower = line.lower()
+        if lower.startswith("copy and open"):
+            continue
+        if "复制" in line and ("小红书" in line or "rednote" in lower or "笔记" in line):
+            continue
+        if "来【小红书】看看" in line or "看看这篇笔记" in line:
+            continue
+        if len(line) < 2:
+            continue
+        return line[:120]
+    return None
+
+
+def _extract_html_title(html: str) -> Optional[str]:
+    for pattern in (
+        r'<meta[^>]+(?:property|name)=["\'](?:og:title|title)["\'][^>]+content=["\'](.*?)["\']',
+        r'<meta[^>]+content=["\'](.*?)["\'][^>]+(?:property|name)=["\'](?:og:title|title)["\']',
+        r"<title>(.*?)</title>",
+    ):
+        match = re.search(pattern, html, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        title = re.sub(r"\s+", " ", match.group(1)).strip()
+        title = re.sub(r"\s*-\s*小红书\s*$", "", title).strip()
+        title = re.split(r"\s+#", title, maxsplit=1)[0].strip()
+        if title:
+            return title[:160]
+    return None
+
+
+def _extract_bilibili_bvid(text: str) -> Optional[str]:
+    match = re.search(r"\b(BV[0-9A-Za-z]{5,})\b", text)
+    return match.group(1) if match else None
 
 
 def _extract_xsec_token(url: str) -> Optional[str]:
