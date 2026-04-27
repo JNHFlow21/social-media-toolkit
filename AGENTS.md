@@ -191,7 +191,8 @@ Use these default test links:
 
 ```text
 DOUYIN_TEST_LINK=https://v.douyin.com/72RGMuz7Xpo/
-XIAOHONGSHU_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
+XIAOHONGSHU_VIDEO_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share
+XIAOHONGSHU_IMAGE_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
 BILIBILI_TEST_LINK=https://www.bilibili.com/video/BV1dQXrBVECR/
 ```
 
@@ -205,16 +206,17 @@ Required smoke tests:
 
 ```bash
 mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
 If the default Xiaohongshu link fails because the platform page expires or blocks access, ask the user for a fresh Xiaohongshu link. Do not claim full three-platform verification until Douyin, Xiaohongshu, and Bilibili all pass.
 
-After metadata parsing passes, test one real transcript/capture path. Prefer the user's Douyin link because it is usually the easiest to verify:
+After metadata parsing passes, test one real transcript/capture path. Prefer the Xiaohongshu video link because it verifies both Xiaohongshu parsing and video ASR:
 
 ```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "https://v.douyin.com/72RGMuz7Xpo/", output_dir: "/tmp/social-post-extract")'
+mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share", output_dir: "/tmp/social-post-extract")'
 ```
 
 For Xiaohongshu video or image notes, use full capture:

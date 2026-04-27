@@ -188,6 +188,9 @@ mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.c
 抖音视频：
 https://v.douyin.com/72RGMuz7Xpo/
 
+小红书视频：
+https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share
+
 小红书图文：
 https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
 
@@ -199,13 +202,15 @@ https://www.bilibili.com/video/BV1dQXrBVECR/
 
 ```bash
 mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
-三平台 metadata 测试都通过后，再测试至少一次 transcript 或完整采集：
+三平台 metadata 测试都通过后，再测试至少一次 transcript 或完整采集。推荐优先测试小红书视频，因为它同时验证小红书解析和视频转写链路：
 
 ```bash
+mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share", output_dir: "/tmp/social-post-extract")'
 mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "抖音视频链接", output_dir: "/tmp/social-post-extract")'
 ```
 
