@@ -187,34 +187,40 @@ After MCP config is complete and the MCP client has been restarted, test all thr
 
 Do not only test the Python unit tests. The goal is to confirm the MCP server can run from the user's client and handle real platform links.
 
+Use these default test links:
+
+```text
+DOUYIN_TEST_LINK=https://v.douyin.com/72RGMuz7Xpo/
+XIAOHONGSHU_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
+BILIBILI_TEST_LINK=https://www.bilibili.com/video/BV1dQXrBVECR/
+```
+
 First test metadata parsing:
 
 ```bash
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
-Then ask the user for one real Douyin link and one real Xiaohongshu link if they have not provided them yet. Use their real links for platform smoke tests.
-
 Required smoke tests:
 
 ```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "DOUYIN_LINK")'
-mcporter call 'douyin.parse_social_post_info(share_link: "XIAOHONGSHU_LINK")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
-If the user does not have a Xiaohongshu link ready, tell them setup can be marked "partially verified" only. Do not claim full three-platform verification until Douyin, Xiaohongshu, and Bilibili all pass.
+If the default Xiaohongshu link fails because the platform page expires or blocks access, ask the user for a fresh Xiaohongshu link. Do not claim full three-platform verification until Douyin, Xiaohongshu, and Bilibili all pass.
 
 After metadata parsing passes, test one real transcript/capture path. Prefer the user's Douyin link because it is usually the easiest to verify:
 
 ```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "DOUYIN_VIDEO_LINK", output_dir: "/tmp/social-post-extract")'
+mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "https://v.douyin.com/72RGMuz7Xpo/", output_dir: "/tmp/social-post-extract")'
 ```
 
 For Xiaohongshu video or image notes, use full capture:
 
 ```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "XIAOHONGSHU_LINK", output_dir: "/tmp/social-post-extract")'
+mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share", output_dir: "/tmp/social-post-extract")'
 ```
 
 For full capture:

@@ -182,11 +182,24 @@ mcporter config list
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
+默认测试链接：
+
+```text
+抖音视频：
+https://v.douyin.com/72RGMuz7Xpo/
+
+小红书图文：
+https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
+
+Bilibili 视频：
+https://www.bilibili.com/video/BV1dQXrBVECR/
+```
+
 安装 agent 配置完成后，必须自动测试三个平台：
 
 ```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "抖音链接")'
-mcporter call 'douyin.parse_social_post_info(share_link: "小红书链接")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
@@ -196,7 +209,7 @@ mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.c
 mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "抖音视频链接", output_dir: "/tmp/social-post-extract")'
 ```
 
-如果没有真实小红书链接，只能说“部分验证通过”，不能说“三平台全部通过”。
+如果默认小红书链接失效，再让用户提供一个新的小红书链接；没有真实可用的小红书链接时，只能说“部分验证通过”，不能说“三平台全部通过”。
 
 真实提取 transcript 时建议给 `output_dir`：
 
