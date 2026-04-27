@@ -32,7 +32,7 @@ from social_post_extractor_mcp.social_extractor import (
     provider_asr_config,
     provider_volcengine_speech_config,
 )
-from social_post_extractor_mcp.env_loader import load_env_file
+from social_post_extractor_mcp.env_loader import default_env_paths, load_default_env_files, load_env_file
 
 
 class FakePlatformAdapter:
@@ -99,6 +99,25 @@ class SocialExtractorServiceTests(unittest.TestCase):
                 self.assertEqual(os.environ["ASR_PROVIDER"], "existing")
                 self.assertEqual(os.environ["BAILIAN_API_KEY"], "sk-demo")
                 self.assertEqual(os.environ["DASHSCOPE_API_KEY"], "sk-dashscope")
+
+    def test_load_default_env_files_prefers_repo_local_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            repo_config = repo_root / "config" / "social-post-extractor.env"
+            repo_config.parent.mkdir()
+            repo_config.write_text("BAILIAN_API_KEY=repo-key\n", encoding="utf-8")
+
+            with patch.dict(os.environ, {}, clear=True):
+                load_default_env_files(repo_root)
+
+                self.assertEqual(os.environ["BAILIAN_API_KEY"], "repo-key")
+
+    def test_default_env_paths_are_cross_platform_and_keep_repo_config_first(self):
+        with patch.dict(os.environ, {"APPDATA": r"C:\Users\demo\AppData\Roaming"}, clear=True):
+            paths = default_env_paths(Path("/repo"))
+
+        self.assertEqual(paths[0], Path("/repo") / "config" / "social-post-extractor.env")
+        self.assertIn(Path(r"C:\Users\demo\AppData\Roaming") / "social-post-extractor-mcp" / "config.env", paths)
 
     def test_explicit_empty_cleanup_registry_disables_env_cleanup_provider(self):
         post = SocialPost(

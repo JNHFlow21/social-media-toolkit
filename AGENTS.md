@@ -20,7 +20,7 @@ Expected tools:
 
 - Never commit or print the user's real API Key.
 - Never put real API keys in README, tests, examples, Git commits, or public logs.
-- Prefer `~/.mcporter/secrets/social-post-extractor.env` for secrets.
+- Prefer `config/social-post-extractor.env` inside the cloned MCP repo for secrets.
 - Preserve existing MCP client config entries when adding this server.
 - Use absolute paths in MCP stdio config.
 - Run tests before telling the user installation is complete.
@@ -83,15 +83,22 @@ If they do not, guide them:
 5. Create an API Key in the default business space.
 6. Copy the key locally. Do not paste it into public chat.
 
-Create the local secrets file:
+Create the local config file inside the MCP repo. This is the preferred cross-platform path because both macOS and Windows MCP clients can read it as long as they start from the repo directory:
 
 ```bash
-mkdir -p ~/.mcporter/secrets
-cp .env.example ~/.mcporter/secrets/social-post-extractor.env
-chmod 600 ~/.mcporter/secrets/social-post-extractor.env
+mkdir -p config
+cp .env.example config/social-post-extractor.env
+chmod 600 config/social-post-extractor.env
 ```
 
-Edit `~/.mcporter/secrets/social-post-extractor.env` with the user's real key:
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force config
+Copy-Item .env.example config/social-post-extractor.env
+```
+
+Edit `config/social-post-extractor.env` with the user's real key:
 
 ```bash
 export ASR_PROVIDER=bailian
@@ -103,11 +110,18 @@ export CLEAN_MODEL=qwen-flash
 export BAILIAN_API_KEY=sk-your-real-api-key
 ```
 
-The server also accepts plain `KEY=value` lines, but `export KEY=value` works well when a shell sources the file.
+This file is ignored by Git through the `config/` ignore rule. The server also accepts plain `KEY=value` lines, so Windows users do not need shell-style environment setup.
+
+Supported config files, in precedence order:
+
+1. `config/social-post-extractor.env`
+2. `.env`
+3. `~/.mcporter/secrets/social-post-extractor.env`
+4. Windows `%APPDATA%\social-post-extractor-mcp\config.env`
 
 ## Step 4: Configure MCP Client
 
-Use this stdio server config. Replace the path with the actual repo path:
+Use this macOS / Linux stdio server config. Replace the path with the actual repo path:
 
 ```json
 {
@@ -123,11 +137,30 @@ Use this stdio server config. Replace the path with the actual repo path:
 }
 ```
 
+Use this Windows PowerShell stdio server config:
+
+```json
+{
+  "mcpServers": {
+    "douyin": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Set-Location 'C:\\ABSOLUTE\\PATH\\social-post-extractor-mcp'; & '.\\.venv\\Scripts\\python.exe' -m social_post_extractor_mcp"
+      ]
+    }
+  }
+}
+```
+
 Notes:
 
 - The server name `douyin` is kept for backward compatibility.
 - The server supports Douyin, Xiaohongshu, and Bilibili even if the MCP server name is `douyin`.
-- Do not put API keys in this JSON unless the user explicitly requires it and understands the risk.
+- Do not put API keys in this JSON.
 
 For mcporter:
 
@@ -194,7 +227,7 @@ When setup is complete, tell the user:
 - The server name they should call.
 - Where outputs are written.
 - Which smoke tests passed.
-- Which API key file is being used, without revealing the key.
+- Which API key file is being used, usually `config/social-post-extractor.env`, without revealing the key.
 - How to use the main tools:
   - `parse_social_post_info` for metadata only
   - `social_extract_transcript` for transcript

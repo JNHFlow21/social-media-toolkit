@@ -36,7 +36,7 @@ https://github.com/JNHFlow21/social-post-extractor-mcp
 - 小红书图文笔记走云端视觉模型分析图片。
 - 自己账号复盘默认只抓数据，不做 ASR。
 - 不把视频作为长期文件下载到本地。
-- API Key 只放本机配置或本机环境变量，不写进 Git。
+- API Key 默认放在 MCP 仓库内的本机配置文件，不写进 Git。
 
 ## 前置条件
 
@@ -74,15 +74,22 @@ uv sync
 
 ## 配置 API Key
 
-不要把真实 API Key 写入仓库。推荐使用本机密钥文件：
+不要配置系统环境变量。推荐把明文 key 放在 MCP 仓库里的本机配置文件：
 
 ```bash
-mkdir -p ~/.mcporter/secrets
-cp .env.example ~/.mcporter/secrets/social-post-extractor.env
-chmod 600 ~/.mcporter/secrets/social-post-extractor.env
+mkdir -p config
+cp .env.example config/social-post-extractor.env
+chmod 600 config/social-post-extractor.env
 ```
 
-然后把 `~/.mcporter/secrets/social-post-extractor.env` 里的占位值改成真实值：
+Windows PowerShell：
+
+```powershell
+New-Item -ItemType Directory -Force config
+Copy-Item .env.example config/social-post-extractor.env
+```
+
+然后把 `config/social-post-extractor.env` 里的占位值改成真实值：
 
 ```bash
 export ASR_PROVIDER=bailian
@@ -94,13 +101,20 @@ export CLEAN_MODEL=qwen-flash
 export BAILIAN_API_KEY=sk-your-real-api-key
 ```
 
-也兼容不带 `export` 的 `KEY=value` 写法。
+这个文件在 `.gitignore` 里，不会被提交。也兼容不带 `export` 的 `KEY=value` 写法。
+
+服务会按顺序读取：
+
+1. `config/social-post-extractor.env`
+2. `.env`
+3. `~/.mcporter/secrets/social-post-extractor.env`
+4. Windows `%APPDATA%\social-post-extractor-mcp\config.env`
 
 ## MCP 客户端配置
 
 server 名可以继续叫 `douyin`，这是为了兼容旧调用；它实际支持抖音、小红书和 Bilibili。
 
-stdio 配置示例，注意把路径替换成你本机真实路径：
+macOS / Linux stdio 配置示例，注意把路径替换成你本机真实路径：
 
 ```json
 {
@@ -116,7 +130,26 @@ stdio 配置示例，注意把路径替换成你本机真实路径：
 }
 ```
 
-不建议把真实 API Key 直接写进 MCP JSON；本服务会自动读取 `~/.mcporter/secrets/social-post-extractor.env`。
+Windows PowerShell stdio 配置示例：
+
+```json
+{
+  "mcpServers": {
+    "douyin": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Set-Location 'C:\\ABSOLUTE\\PATH\\social-post-extractor-mcp'; & '.\\.venv\\Scripts\\python.exe' -m social_post_extractor_mcp"
+      ]
+    }
+  }
+}
+```
+
+不要把真实 API Key 直接写进 MCP JSON；本服务会自动读取 `config/social-post-extractor.env`。
 
 ## 验证
 
@@ -153,7 +186,7 @@ mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "
 
 如果提示 API Key 不存在：
 
-- 检查 `~/.mcporter/secrets/social-post-extractor.env` 是否存在
+- 检查 `config/social-post-extractor.env` 是否存在
 - 检查 `BAILIAN_API_KEY` 或 `DASHSCOPE_API_KEY` 是否填了真实值
 - 重启 MCP 客户端
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP server for Douyin and XiaoHongShu extraction."""
+"""MCP server for Douyin, Xiaohongshu, and Bilibili extraction."""
 
 from __future__ import annotations
 
@@ -10,12 +10,11 @@ from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 
-from .env_loader import load_env_file
+from .env_loader import load_default_env_files
 from .social_extractor import DEFAULT_ASR_PROVIDER, OwnerAnalyticsCommandProvider, SocialExtractorService
 
 
-_env_file = Path.home() / ".mcporter" / "secrets" / "social-post-extractor.env"
-load_env_file(_env_file)
+load_default_env_files(Path(__file__).resolve().parents[1])
 
 
 mcp = FastMCP(
