@@ -193,13 +193,13 @@ Use these default test links:
 DOUYIN_TEST_LINK=https://v.douyin.com/72RGMuz7Xpo/
 XIAOHONGSHU_VIDEO_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share
 XIAOHONGSHU_IMAGE_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
-BILIBILI_TEST_LINK=https://www.bilibili.com/video/BV1dQXrBVECR/
+BILIBILI_TEST_LINK=https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842
 ```
 
 First test metadata parsing:
 
 ```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
 ```
 
 Required smoke tests:
@@ -208,7 +208,7 @@ Required smoke tests:
 mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
 ```
 
 If the default Xiaohongshu link fails because the platform page expires or blocks access, ask the user for a fresh Xiaohongshu link. Do not claim full three-platform verification until Douyin, Xiaohongshu, and Bilibili all pass.

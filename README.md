@@ -179,7 +179,7 @@ uv run python -m compileall social_post_extractor_mcp
 
 ```bash
 mcporter config list
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
 ```
 
 默认测试链接：
@@ -195,7 +195,7 @@ https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=websh
 https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
 
 Bilibili 视频：
-https://www.bilibili.com/video/BV1dQXrBVECR/
+https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842
 ```
 
 安装 agent 配置完成后，必须自动测试三个平台：
@@ -204,7 +204,7 @@ https://www.bilibili.com/video/BV1dQXrBVECR/
 mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share")'
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
 ```
 
 三平台 metadata 测试都通过后，再测试至少一次 transcript 或完整采集。推荐优先测试小红书视频，因为它同时验证小红书解析和视频转写链路：
