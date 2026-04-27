@@ -188,6 +188,113 @@ mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.c
 mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "你的抖音/小红书/Bilibili链接", output_dir: "/tmp/social-post-extract")'
 ```
 
+## 使用教程
+
+配置完成后，学员不用记 MCP 工具名，直接把链接发给 AI Agent 即可。
+
+### 转写抖音视频
+
+直接说：
+
+```text
+帮我转写这个抖音视频，并保存成 script.md 和 info.json：
+https://v.douyin.com/xxxx/
+```
+
+Agent 应该调用：
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "抖音链接", output_dir: "/tmp/social-post-extract")'
+```
+
+如果只要文字稿，不需要完整信息：
+
+```text
+帮我只提取这个抖音视频的转写稿：
+https://v.douyin.com/xxxx/
+```
+
+Agent 应该调用：
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "抖音链接", output_dir: "/tmp/social-post-extract")'
+```
+
+### 转写小红书视频
+
+直接说：
+
+```text
+帮我转写这个小红书视频笔记：
+小红书分享链接
+```
+
+Agent 应该调用：
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "小红书链接", output_dir: "/tmp/social-post-extract")'
+```
+
+### 提取小红书图文笔记
+
+直接说：
+
+```text
+帮我提取这个小红书图文笔记的正文、图片内容和数据：
+小红书分享链接
+```
+
+Agent 应该调用：
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "小红书链接", output_dir: "/tmp/social-post-extract")'
+```
+
+图文笔记会保存正文、图片 URL，并用视觉模型分析图片内容。
+
+### 转写 Bilibili 视频
+
+直接说：
+
+```text
+帮我转写这个 B 站视频，并保存结构化信息：
+https://www.bilibili.com/video/BVxxxx/
+```
+
+Agent 应该调用：
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "B站链接", output_dir: "/tmp/social-post-extract")'
+```
+
+### 只看作者和数据
+
+如果只想看标题、作者、点赞、评论、收藏等信息，不想跑转写：
+
+```text
+帮我看一下这个链接的作者、标题和数据，不用转写：
+平台链接
+```
+
+Agent 应该调用：
+
+```bash
+mcporter call 'douyin.parse_social_post_info(share_link: "平台链接")'
+```
+
+### 输出在哪里
+
+默认建议输出到：
+
+```text
+/tmp/social-post-extract
+```
+
+每次成功提取后，结果里会返回实际路径：
+
+- `script_path`：整理后的 Markdown 文稿
+- `info_path`：结构化 JSON 数据
+
 ## 工具列表
 
 - `parse_social_post_info`：只解析作者、作品、指标和媒体信息，不做 ASR

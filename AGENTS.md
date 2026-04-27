@@ -206,7 +206,29 @@ For full capture:
 mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "USER_LINK", output_dir: "/tmp/social-post-extract")'
 ```
 
-## Step 6: Optional Owner Analytics
+## Step 6: Teach The User How To Use It
+
+After installation, teach the user that they can use natural language. They do not need to memorize tool names.
+
+Recommended user prompts and agent actions:
+
+- User says: `帮我转写这个抖音视频：LINK`
+  - Call `social_capture_url` if they want files, or `social_extract_transcript` if they only want transcript.
+- User says: `帮我转写这个小红书视频笔记：LINK`
+  - Call `social_capture_url`.
+- User says: `帮我提取这个小红书图文笔记的正文、图片内容和数据：LINK`
+  - Call `social_capture_url`.
+- User says: `帮我转写这个 B 站视频：LINK`
+  - Call `social_capture_url`.
+- User says: `帮我看一下这个链接的作者、标题和数据，不用转写：LINK`
+  - Call `parse_social_post_info`.
+
+Always tell the user where the output files are:
+
+- `script_path` for the Markdown script.
+- `info_path` for structured JSON.
+
+## Step 7: Optional Owner Analytics
 
 Only do this if the user wants their own account review.
 
