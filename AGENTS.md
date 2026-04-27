@@ -296,3 +296,31 @@ If setup fails, report:
 - The command that failed.
 - The relevant error message.
 - The next concrete fix.
+
+Use this final reply shape:
+
+```text
+OK，MCP 已安装并通过三平台测试。
+
+配置结果：
+- MCP 客户端：...
+- Server 名称：douyin
+- API Key 文件：config/social-post-extractor.env，未展示真实 key
+
+测试结果：
+- 抖音 metadata：通过，作品 ID：...
+- 小红书 metadata：通过，作品 ID：...
+- Bilibili metadata：通过，作品 ID：...
+- 转写/完整采集：通过
+
+输出文件：
+- script.md：...
+- info.json：...
+
+以后你可以这样用：
+- 帮我转写这个抖音视频：链接
+- 帮我转写这个小红书视频笔记：链接
+- 帮我提取这个小红书图文笔记的正文、图片内容和数据：链接
+- 帮我转写这个 B 站视频：链接
+- 帮我看一下这个链接的作者、标题和数据，不用转写：链接
+```

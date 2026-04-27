@@ -204,6 +204,29 @@ mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "
 mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "你的抖音/小红书/Bilibili链接", output_dir: "/tmp/social-post-extract")'
 ```
 
+安装完成后，AI Agent 应该先给出类似这样的回执：
+
+```text
+OK，MCP 已安装并通过测试。
+
+测试结果：
+- 抖音 metadata：通过
+- 小红书 metadata：通过
+- Bilibili metadata：通过
+- 转写/完整采集：通过
+
+输出文件：
+- script.md：实际路径
+- info.json：实际路径
+
+以后你可以直接说：
+- 帮我转写这个抖音视频：链接
+- 帮我转写这个小红书视频笔记：链接
+- 帮我提取这个小红书图文笔记的正文、图片内容和数据：链接
+- 帮我转写这个 B 站视频：链接
+- 帮我看一下这个链接的作者、标题和数据，不用转写：链接
+```
+
 ## 使用教程
 
 配置完成后，学员不用记 MCP 工具名，直接把链接发给 AI Agent 即可。
