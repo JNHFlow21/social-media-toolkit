@@ -49,7 +49,18 @@ https://github.com/JNHFlow21/social-post-extractor-mcp
 获取 API Key 的官方说明：
 
 - 百炼 API Key 文档：https://help.aliyun.com/zh/model-studio/get-api-key
+- 百炼控制台直达入口：https://bailian.console.aliyun.com/
 - 百炼兼容 OpenAI Base URL 默认可用：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+
+找 API Key 的路径：
+
+1. 打开百炼控制台直达入口。
+2. 登录阿里云账号。
+3. 页面右上角选择 `华北2（北京）`。
+4. 进入 `API Key` / `密钥管理` 页面。
+5. 点击 `创建 API Key`。
+6. 归属业务空间选 `默认业务空间`。
+7. 创建后复制 `sk-...` 开头的 API Key，填到 `config/social-post-extractor.env`。
 
 如果要做“自己账号复盘”，还需要：
 

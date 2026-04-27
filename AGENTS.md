@@ -76,12 +76,14 @@ Ask whether the user already has an Aliyun Bailian / DashScope API Key.
 
 If they do not, guide them:
 
-1. Open the official API Key documentation: https://help.aliyun.com/zh/model-studio/get-api-key
-2. Log in to Aliyun.
-3. Open Bailian / Model Studio.
-4. Go to API Key management.
-5. Create an API Key in the default business space.
-6. Copy the key locally. Do not paste it into public chat.
+1. Open the Bailian console: https://bailian.console.aliyun.com/
+2. If the user is confused, open the official API Key documentation: https://help.aliyun.com/zh/model-studio/get-api-key
+3. Log in to Aliyun.
+4. Select `华北2（北京）` in the top-right region selector.
+5. Go to `API Key` / `密钥管理`.
+6. Click `创建 API Key`.
+7. Select the default business space.
+8. Copy the `sk-...` key locally. Do not paste it into public chat.
 
 Create the local config file inside the MCP repo. This is the preferred cross-platform path because both macOS and Windows MCP clients can read it as long as they start from the repo directory:
 
