@@ -182,6 +182,22 @@ mcporter config list
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
+安装 agent 配置完成后，必须自动测试三个平台：
+
+```bash
+mcporter call 'douyin.parse_social_post_info(share_link: "抖音链接")'
+mcporter call 'douyin.parse_social_post_info(share_link: "小红书链接")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
+```
+
+三平台 metadata 测试都通过后，再测试至少一次 transcript 或完整采集：
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "抖音视频链接", output_dir: "/tmp/social-post-extract")'
+```
+
+如果没有真实小红书链接，只能说“部分验证通过”，不能说“三平台全部通过”。
+
 真实提取 transcript 时建议给 `output_dir`：
 
 ```bash

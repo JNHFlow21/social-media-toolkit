@@ -24,6 +24,7 @@ Expected tools:
 - Preserve existing MCP client config entries when adding this server.
 - Use absolute paths in MCP stdio config.
 - Run tests before telling the user installation is complete.
+- After config, automatically test Douyin, Xiaohongshu, and Bilibili before saying OK.
 
 ## Step 1: Check Prerequisites
 
@@ -180,7 +181,11 @@ For Claude Desktop, Claude Code, Codex, OpenClaw, or another stdio MCP client, u
 
 Restart the MCP client after editing config.
 
-## Step 5: Smoke Test
+## Step 5: Required Three-Platform Smoke Test
+
+After MCP config is complete and the MCP client has been restarted, test all three platforms before telling the user setup is done.
+
+Do not only test the Python unit tests. The goal is to confirm the MCP server can run from the user's client and handle real platform links.
 
 First test metadata parsing:
 
@@ -188,16 +193,28 @@ First test metadata parsing:
 mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
-Then test with a real link from the user:
+Then ask the user for one real Douyin link and one real Xiaohongshu link if they have not provided them yet. Use their real links for platform smoke tests.
+
+Required smoke tests:
 
 ```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "USER_LINK")'
+mcporter call 'douyin.parse_social_post_info(share_link: "DOUYIN_LINK")'
+mcporter call 'douyin.parse_social_post_info(share_link: "XIAOHONGSHU_LINK")'
+mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV1dQXrBVECR/")'
 ```
 
-For transcript extraction:
+If the user does not have a Xiaohongshu link ready, tell them setup can be marked "partially verified" only. Do not claim full three-platform verification until Douyin, Xiaohongshu, and Bilibili all pass.
+
+After metadata parsing passes, test one real transcript/capture path. Prefer the user's Douyin link because it is usually the easiest to verify:
 
 ```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "USER_VIDEO_LINK", output_dir: "/tmp/social-post-extract")'
+mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "DOUYIN_VIDEO_LINK", output_dir: "/tmp/social-post-extract")'
+```
+
+For Xiaohongshu video or image notes, use full capture:
+
+```bash
+mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "XIAOHONGSHU_LINK", output_dir: "/tmp/social-post-extract")'
 ```
 
 For full capture:
@@ -206,9 +223,19 @@ For full capture:
 mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "USER_LINK", output_dir: "/tmp/social-post-extract")'
 ```
 
+Only say the MCP is installed successfully when:
+
+- Python unit tests pass.
+- Python compile check passes.
+- MCP client can call the server.
+- Douyin metadata test passes.
+- Xiaohongshu metadata test passes.
+- Bilibili metadata test passes.
+- At least one transcript or full capture test succeeds and returns `script_path` / `info_path`.
+
 ## Step 6: Teach The User How To Use It
 
-After installation, teach the user that they can use natural language. They do not need to memorize tool names.
+After all required tests pass, first say `OK，MCP 已安装并通过三平台测试。` Then teach the user that they can use natural language. They do not need to memorize tool names.
 
 Recommended user prompts and agent actions:
 
@@ -254,7 +281,8 @@ When setup is complete, tell the user:
 - Which MCP client was configured.
 - The server name they should call.
 - Where outputs are written.
-- Which smoke tests passed.
+- Which smoke tests passed for Douyin, Xiaohongshu, and Bilibili.
+- Whether transcript/full capture produced `script_path` and `info_path`.
 - Which API key file is being used, usually `config/social-post-extractor.env`, without revealing the key.
 - How to use the main tools:
   - `parse_social_post_info` for metadata only
