@@ -10,17 +10,12 @@ from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 
+from .env_loader import load_env_file
 from .social_extractor import DEFAULT_ASR_PROVIDER, OwnerAnalyticsCommandProvider, SocialExtractorService
 
 
 _env_file = Path.home() / ".mcporter" / "secrets" / "social-post-extractor.env"
-if _env_file.exists() and not os.getenv("ASR_PROVIDER"):
-    with open(_env_file, encoding="utf-8") as _file:
-        for _line in _file:
-            _line = _line.strip()
-            if _line.startswith("export ") and "=" in _line:
-                _key, _, _value = _line[7:].partition("=")
-                os.environ[_key.strip()] = _value.strip("'\"")
+load_env_file(_env_file)
 
 
 mcp = FastMCP(

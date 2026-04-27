@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 import wave
@@ -31,6 +32,7 @@ from social_post_extractor_mcp.social_extractor import (
     provider_asr_config,
     provider_volcengine_speech_config,
 )
+from social_post_extractor_mcp.env_loader import load_env_file
 
 
 class FakePlatformAdapter:
@@ -76,6 +78,28 @@ class FailingAsrProvider:
 
 
 class SocialExtractorServiceTests(unittest.TestCase):
+    def test_load_env_file_supports_plain_and_export_lines(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / "social-post-extractor.env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "# comment",
+                        "ASR_PROVIDER=bailian",
+                        "export BAILIAN_API_KEY='sk-demo'",
+                        'DASHSCOPE_API_KEY="sk-dashscope"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"ASR_PROVIDER": "existing"}, clear=True):
+                load_env_file(env_path)
+
+                self.assertEqual(os.environ["ASR_PROVIDER"], "existing")
+                self.assertEqual(os.environ["BAILIAN_API_KEY"], "sk-demo")
+                self.assertEqual(os.environ["DASHSCOPE_API_KEY"], "sk-dashscope")
+
     def test_explicit_empty_cleanup_registry_disables_env_cleanup_provider(self):
         post = SocialPost(
             platform="xiaohongshu",

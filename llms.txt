@@ -1,11 +1,18 @@
 # Social Post Extractor MCP
 
 Short summary:
-An MCP server for extracting structured content from Douyin and Xiaohongshu links. Supports Douyin videos, Xiaohongshu video notes, and Xiaohongshu image notes. Default artifacts are script.md and info.json.
+An MCP server for extracting structured content, metadata, and transcripts from Douyin, Xiaohongshu, and Bilibili links. Default artifacts are script.md and info.json.
 
 Primary docs:
 - README.md
+- AGENTS.md
 - AGENT_REACH_INTEGRATION.md
+
+For AI installation agents:
+1. Read README.md for the user-facing install path.
+2. Read AGENTS.md for the executable install protocol.
+3. Do not ask the user to copy a long prompt.
+4. Guide the user step by step through API Key creation, secret-file setup, MCP config, and smoke tests.
 
 Default model stack:
 - ASR: bailian / paraformer-v2
@@ -14,17 +21,21 @@ Default model stack:
 
 Primary tools:
 - parse_social_post_info
+- social_extract_transcript
+- social_capture_url
 - extract_social_post_script
+- social_analyze_owner_posts
+
+Compatibility tools:
+- parse_douyin_video_info
+- get_douyin_download_link
 - extract_douyin_text
 
 Key behavior:
-- extract_social_post_script is the preferred unified entrypoint
-- extract_douyin_text is kept for backward compatibility
-- cleanup should remain light and should not summarize unless the user explicitly asks
-- API keys must stay in local config or environment variables and must never be committed
-
-Recommended starting point for AI agents:
-1. Read README.md
-2. Use the default Bailian stack
-3. Prefer mcporter config in ~/.mcporter/mcporter.json when integrating with Agent Reach
-4. Write outputs to /tmp or another local artifact directory
+- parse_social_post_info returns metadata only and should not run ASR.
+- social_extract_transcript is the preferred transcript-only entrypoint.
+- social_capture_url is the preferred full capture entrypoint.
+- social_analyze_owner_posts is for logged-in owner analytics and requires browser-backed local tooling.
+- API keys must stay in local config or environment variables and must never be committed.
+- Prefer ~/.mcporter/secrets/social-post-extractor.env for secrets.
+- The MCP server may be named douyin for backward compatibility even though it supports Douyin, Xiaohongshu, and Bilibili.

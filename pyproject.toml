@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "social-post-extractor-mcp"
 version = "0.1.0"
-description = "MCP server for extracting scripts and metadata from Douyin and Xiaohongshu posts, including video ASR and image-note OCR"
+description = "MCP server for extracting scripts and metadata from Douyin, Xiaohongshu, and Bilibili posts, including video ASR and image-note OCR"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
@@ -17,6 +17,7 @@ keywords = [
     "douyin",
     "xiaohongshu",
     "rednote",
+    "bilibili",
     "transcript",
     "asr",
     "ocr",
