@@ -46,21 +46,23 @@ https://github.com/JNHFlow21/social-post-extractor-mcp
 - 一个支持 stdio MCP 的客户端，例如 mcporter、Claude Desktop、Claude Code、Codex 或 OpenClaw
 - 阿里云百炼 / DashScope API Key，用于 ASR、视觉模型和清理模型
 
-获取 API Key 的官方说明：
+获取 API Key：
 
-- 百炼 API Key 文档：https://help.aliyun.com/zh/model-studio/get-api-key
-- 百炼控制台直达入口：https://bailian.console.aliyun.com/
-- 百炼兼容 OpenAI Base URL 默认可用：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+- API Key 页面直达：https://bailian.console.aliyun.com/cn-beijing?tab=model#/api-key
+- 官方教程：https://help.aliyun.com/zh/model-studio/get-api-key
+- Base URL：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+- ASR URL：`https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription`
 
 找 API Key 的路径：
 
-1. 打开百炼控制台直达入口。
+1. 打开 API Key 页面直达链接。
 2. 登录阿里云账号。
-3. 页面右上角选择 `华北2（北京）`。
-4. 进入 `API Key` / `密钥管理` 页面。
+3. 如果没有自动进入北京地域，页面右上角选择 `华北2（北京）`。
+4. 归属业务空间选择 `默认业务空间`。
 5. 点击 `创建 API Key`。
-6. 归属业务空间选 `默认业务空间`。
-7. 创建后复制 `sk-...` 开头的 API Key，填到 `config/social-post-extractor.env`。
+6. 权限选择 `全部`。
+7. 点击 `确定`。
+8. 创建后复制 `sk-...` 开头的 API Key，发给正在帮你安装的 AI Agent，让它自动填入 `config/social-post-extractor.env`。
 
 如果要做“自己账号复盘”，还需要：
 
@@ -110,6 +112,8 @@ export VISION_MODEL=qwen3-vl-flash
 export CLEAN_PROVIDER=bailian
 export CLEAN_MODEL=qwen-flash
 export BAILIAN_API_KEY=sk-your-real-api-key
+export BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+export DASHSCOPE_ASR_URL=https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription
 ```
 
 这个文件在 `.gitignore` 里，不会被提交。也兼容不带 `export` 的 `KEY=value` 写法。

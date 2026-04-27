@@ -76,14 +76,16 @@ Ask whether the user already has an Aliyun Bailian / DashScope API Key.
 
 If they do not, guide them:
 
-1. Open the Bailian console: https://bailian.console.aliyun.com/
+1. Open the direct API Key page: https://bailian.console.aliyun.com/cn-beijing?tab=model#/api-key
 2. If the user is confused, open the official API Key documentation: https://help.aliyun.com/zh/model-studio/get-api-key
 3. Log in to Aliyun.
-4. Select `华北2（北京）` in the top-right region selector.
-5. Go to `API Key` / `密钥管理`.
+4. If the page is not already in Beijing, select `华北2（北京）` in the top-right region selector.
+5. Select the default business space.
 6. Click `创建 API Key`.
-7. Select the default business space.
-8. Copy the `sk-...` key locally. Do not paste it into public chat.
+7. Set permission to `全部`.
+8. Click `确定`.
+9. Ask the user to copy the `sk-...` key and send it to you in the private agent chat.
+10. Write it into `config/social-post-extractor.env` for them.
 
 Create the local config file inside the MCP repo. This is the preferred cross-platform path because both macOS and Windows MCP clients can read it as long as they start from the repo directory:
 
@@ -110,6 +112,8 @@ export VISION_MODEL=qwen3-vl-flash
 export CLEAN_PROVIDER=bailian
 export CLEAN_MODEL=qwen-flash
 export BAILIAN_API_KEY=sk-your-real-api-key
+export BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+export DASHSCOPE_ASR_URL=https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription
 ```
 
 This file is ignored by Git through the `config/` ignore rule. The server also accepts plain `KEY=value` lines, so Windows users do not need shell-style environment setup.
