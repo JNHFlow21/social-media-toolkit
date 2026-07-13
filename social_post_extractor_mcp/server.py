@@ -59,6 +59,15 @@ def parse_social_post_info_value(share_link: str) -> dict:
     }
 
 
+def get_douyin_comments_value(
+    share_link: str,
+    *,
+    sort_by: str = "likes",
+    limit: int = 10,
+) -> dict:
+    return _SERVICE.get_douyin_comments(share_link, sort_by=sort_by, limit=limit)
+
+
 def extract_social_post_script_value(
     share_link: str,
     *,
@@ -92,6 +101,27 @@ def parse_social_post_info(share_link: str) -> str:
     """自动识别抖音或小红书链接并返回结构化信息。"""
     try:
         return json.dumps(parse_social_post_info_value(share_link), ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def get_douyin_comments(
+    share_link: str,
+    sort_by: str = "likes",
+    limit: int = 10,
+) -> str:
+    """获取抖音公开评论。
+
+    纯 HTTP 路径，不使用浏览器、CDP 或登录态。sort_by 支持 likes（点赞数）
+    和 recent（发布时间）；公开接口最多返回 10 条顶层评论及回复数量，不包含回复正文。
+    """
+    try:
+        return json.dumps(
+            get_douyin_comments_value(share_link, sort_by=sort_by, limit=limit),
+            ensure_ascii=False,
+            indent=2,
+        )
     except Exception as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
 
@@ -312,6 +342,7 @@ def social_post_extraction_guide() -> str:
 ## 推荐工具
 - `social_capture_url`: 统一采集链接并生成 script.md 和 info.json
 - `social_extract_transcript`: 只关心视频 transcript 时使用
+- `get_douyin_comments`: 获取点赞最高或最近的 10 条抖音公开顶层评论（纯 HTTP，不使用浏览器/CDP）
 - `social_analyze_owner_posts`: 拉取自己账号的复盘数据
 - `parse_social_post_info`: 只解析基础信息
 - `extract_social_post_script`: 生成 script.md 和 info.json

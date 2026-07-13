@@ -21,6 +21,8 @@ from social_post_extractor_mcp.social_extractor import (
     build_volcengine_audio_request,
     build_volcengine_full_client_request,
     default_model_for_provider,
+    fetch_douyin_public_comments,
+    normalize_douyin_public_comment,
     parse_douyin_creator_items,
     parse_douyin_creator_overview,
     parse_douyin_creator_post_detail,
@@ -44,6 +46,17 @@ class FakePlatformAdapter:
 
     def fetch_post(self, share_text: str) -> SocialPost:
         return self.post
+
+
+class FakeJsonResponse:
+    def __init__(self, payload: dict):
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self.payload
 
 
 class FakeAsrProvider:
@@ -78,6 +91,80 @@ class FailingAsrProvider:
 
 
 class SocialExtractorServiceTests(unittest.TestCase):
+    def test_normalizes_public_douyin_comment(self):
+        normalized = normalize_douyin_public_comment(
+            {
+                "aweme_id": "123",
+                "cid": "comment-1",
+                "text": "一条评论",
+                "createTime": 1782820876,
+                "digg_count": 7,
+                "reply_comment_total": 2,
+                "ip_label": "广东",
+                "user": {
+                    "nickname": "测试用户",
+                    "unique_id": "demo-user",
+                    "short_id": "10001",
+                    "sec_uid": "sec-demo",
+                    "avatar_thumb": {"url_list": ["http://img.example.com/avatar.jpg"]},
+                },
+            }
+        )
+
+        self.assertEqual(normalized["comment_id"], "comment-1")
+        self.assertEqual(normalized["like_count"], 7)
+        self.assertEqual(normalized["reply_count"], 2)
+        self.assertEqual(normalized["create_time_iso"], "2026-06-30T12:01:16Z")
+        self.assertEqual(normalized["author"]["handle"], "demo-user")
+        self.assertEqual(normalized["author"]["avatar_url"], "https://img.example.com/avatar.jpg")
+
+    def test_fetches_and_sorts_public_douyin_comments_without_browser(self):
+        payload = {
+            "comments": [
+                {
+                    "aweme_id": "123",
+                    "cid": "older-popular",
+                    "text": "高赞",
+                    "createTime": 100,
+                    "digg_count": 20,
+                    "reply_comment_total": 1,
+                    "user": {"nickname": "A"},
+                },
+                {
+                    "aweme_id": "123",
+                    "cid": "newer",
+                    "text": "最新",
+                    "createTime": 200,
+                    "digg_count": 2,
+                    "reply_comment_total": 0,
+                    "user": {"nickname": "B"},
+                },
+            ],
+            "status_code": {"StatusCode": 0},
+        }
+
+        with patch(
+            "social_post_extractor_mcp.social_extractor.requests.get",
+            return_value=FakeJsonResponse(payload),
+        ) as request_get:
+            by_likes = fetch_douyin_public_comments("123", limit=2, sort_by="likes")
+            by_recent = fetch_douyin_public_comments("123", limit=2, sort_by="recent")
+
+        self.assertEqual(by_likes["comments"][0]["comment_id"], "older-popular")
+        self.assertEqual(by_recent["comments"][0]["comment_id"], "newer")
+        self.assertFalse(by_recent["reply_bodies_included"])
+        self.assertEqual(by_likes["reported_reply_count"], 1)
+        self.assertEqual(request_get.call_count, 2)
+        _, kwargs = request_get.call_args
+        self.assertEqual(kwargs["params"]["aweme_id"], "123")
+        self.assertIn("iesdouyin.com/web/api/v2/comment/list", request_get.call_args.args[0])
+
+    def test_public_douyin_comments_rejects_unsupported_limit_and_sort(self):
+        with self.assertRaisesRegex(ValueError, "limit"):
+            fetch_douyin_public_comments("123", limit=11)
+        with self.assertRaisesRegex(ValueError, "sort_by"):
+            fetch_douyin_public_comments("123", sort_by="random")
+
     def test_load_env_file_supports_plain_and_export_lines(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / "social-post-extractor.env"

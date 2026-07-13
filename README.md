@@ -25,7 +25,7 @@ https://github.com/JNHFlow21/social-post-extractor-mcp
 
 ## 能做什么
 
-- 抖音：公开视频信息、作者信息、指标、视频 transcript
+- 抖音：公开视频信息、作者信息、指标、公开顶层评论、视频 transcript
 - 小红书：视频笔记 transcript、图文笔记正文和图片视觉分析
 - Bilibili：公开视频信息、作者信息、指标、视频 transcript
 - 自己账号复盘：通过本机浏览器登录态拉取作品列表、账号概览、作品详情等数据
@@ -248,6 +248,22 @@ OK，MCP 已安装并通过测试。
 ## 使用教程
 
 配置完成后，学员不用记 MCP 工具名，直接把链接发给 AI Agent 即可。
+
+### 获取抖音公开评论
+
+点赞量最高的 10 条：
+
+```bash
+mcporter call 'douyin.get_douyin_comments(share_link: "抖音链接", sort_by: "likes", limit: 10)'
+```
+
+最近的 10 条：
+
+```bash
+mcporter call 'douyin.get_douyin_comments(share_link: "抖音链接", sort_by: "recent", limit: 10)'
+```
+
+该工具直接请求抖音公开移动分享接口，不使用浏览器、CDP、Playwright 或登录态。当前公开接口最多返回 10 条顶层评论，包含评论正文、点赞数、时间、IP 属地、作者公开信息和回复数量，但不包含回复正文。`likes` 是对这批公开返回的顶层评论排序，不代表在评论数超过接口上限时覆盖全量评论。
 
 ### 转写抖音视频
 

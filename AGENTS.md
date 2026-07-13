@@ -11,6 +11,7 @@ The user should be able to call one MCP server, usually named `douyin`, that sup
 Expected tools:
 
 - `parse_social_post_info`
+- `get_douyin_comments`
 - `social_extract_transcript`
 - `social_capture_url`
 - `extract_social_post_script`
@@ -257,6 +258,8 @@ Recommended user prompts and agent actions:
   - Call `social_capture_url`.
 - User says: `帮我看一下这个链接的作者、标题和数据，不用转写：LINK`
   - Call `parse_social_post_info`.
+- User says: `获取这个抖音视频点赞最高/最近的 10 条评论：LINK`
+  - Call `get_douyin_comments` with `sort_by: "likes"` or `sort_by: "recent"`.
 
 Always tell the user where the output files are:
 
@@ -294,6 +297,7 @@ When setup is complete, tell the user:
 - Which API key file is being used, usually `config/social-post-extractor.env`, without revealing the key.
 - How to use the main tools:
   - `parse_social_post_info` for metadata only
+  - `get_douyin_comments` for up to 10 public top-level Douyin comments without browser/CDP
   - `social_extract_transcript` for transcript
   - `social_capture_url` for full capture
   - `social_analyze_owner_posts` for own-account review
