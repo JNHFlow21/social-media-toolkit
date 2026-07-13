@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Normalize second, millisecond, and microsecond platform timestamps before
+  emitting `PostBundle.post.published_at` and `published_at_epoch`.
+- Treat `text`, text-enabled `capture`, and full-chain smoke-test requests as
+  the execution signal for configured GetNote and Volcengine ASR, without a
+  second authorization prompt.
+
 ## 0.3.0 - 2026-07-13
 
 - Reduced SDK, CLI, and MCP to one `SocialMediaToolkit` orchestrator.

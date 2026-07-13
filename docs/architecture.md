@@ -55,13 +55,17 @@ fallback.
 ## Side effects
 
 - `inspect`: public network reads only.
-- `get_text`: public reads and possibly paid Volcengine ASR; no persistent media.
+- `get_text`: automatically runs configured GetNote, then native subtitles, then possibly paid Volcengine ASR; no persistent media and no second authorization prompt.
 - `get_comments`: public network reads only.
 - `download`: persistent writes and always requires `output_dir`.
 - `capture`: media writes only when `output_dir` is supplied.
 
 ASR media and extracted MP3 files live only inside a temporary directory and
 are deleted when the call ends.
+
+Calling `get_text`, a text-enabled `capture`, or a full-chain smoke test is the
+execution signal for this documented route. Use `inspect` when metadata-only,
+side-effect-free behavior is required.
 
 ## Security
 

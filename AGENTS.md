@@ -19,6 +19,7 @@ This repository is a public, reusable product. It must not depend on the Brain v
 5. SDK, CLI, and MCP must call the same `SocialMediaToolkit`; do not add legacy aliases or a second scheduler.
 6. Volcengine is the only ASR provider. Do not add local ASR or another cloud fallback.
 7. Never claim a public comment sample is a global platform ranking.
+8. A `text`, text-enabled `capture`, or full-chain smoke-test request runs configured GetNote and Volcengine ASR automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
 
 ## Secrets
 
@@ -37,7 +38,8 @@ This repository is a public, reusable product. It must not depend on the Brain v
 - Keep platform-specific extraction behind adapters and all routing inside the one toolkit service.
 - Keep the normalized `PostBundle` schema stable; version breaking schema changes.
 - No network call or file write at import time.
-- Avoid hidden persistent downloads, browser launches, account actions, or unreported paid ASR calls.
+- Keep persistent downloads explicit. GetNote processing and temporary Volcengine ASR are the documented default side effects of text requests; do not add a confirmation gate, and never hide which route ran.
+- Avoid browser launches, unrelated account actions, or unreported paid ASR calls.
 - Unit tests must use synthetic fixtures and must not contain real cookies, tokens, or private content.
 
 ## Completion gate
@@ -52,4 +54,4 @@ uv build
 git diff --check
 ```
 
-For a release, also run authorized, read-only smoke tests for Douyin, Xiaohongshu, Bilibili, and YouTube. Report blocked platforms honestly; never weaken tests or fabricate success.
+For a release, also run live smoke tests for Douyin, Xiaohongshu, Bilibili, and YouTube. When the test includes text, run configured GetNote and Volcengine ASR without asking for separate authorization. Report side effects, possible charges, and blocked platforms honestly; never weaken tests or fabricate success.

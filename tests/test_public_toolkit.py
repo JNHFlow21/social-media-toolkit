@@ -158,6 +158,15 @@ class PostBundleTests(unittest.TestCase):
         ])
         self.assertEqual(bundle["media"]["audio"][0]["url"], "https://cdn.example.com/audio.m4a")
 
+    def test_normalizes_millisecond_publish_time_to_epoch_seconds(self):
+        post = make_video_post()
+        post.publish_time = 1_783_704_143_000
+
+        bundle = PostBundle.from_social_post(post).to_dict()
+
+        self.assertEqual(bundle["post"]["published_at_epoch"], 1_783_704_143)
+        self.assertEqual(bundle["post"]["published_at"], "2026-07-10T17:22:23Z")
+
 
 class GetNoteProviderTests(unittest.TestCase):
     def test_missing_binary_returns_install_and_auth_hint(self):

@@ -13,13 +13,26 @@ def utc_now_iso() -> str:
 
 
 def epoch_to_iso(value: Any) -> Optional[str]:
+    timestamp = epoch_to_seconds(value)
+    if timestamp is None:
+        return None
+    try:
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def epoch_to_seconds(value: Any) -> Optional[int]:
+    """Normalize Unix timestamps expressed in seconds, milliseconds, or microseconds."""
     try:
         timestamp = int(value)
     except (TypeError, ValueError):
         return None
     if timestamp <= 0:
         return None
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    while timestamp > 9_999_999_999:
+        timestamp //= 1000
+    return timestamp
 
 
 @dataclass
@@ -51,6 +64,7 @@ class PostBundle:
 
     @classmethod
     def from_social_post(cls, social_post: Any) -> "PostBundle":
+        published_at_epoch = epoch_to_seconds(social_post.publish_time)
         media = social_post.media or {}
         video_url = media.get("video_url") or social_post.video_url
         cover_url = media.get("cover_url") or social_post.cover_url
@@ -83,8 +97,8 @@ class PostBundle:
             post={
                 "title": social_post.title,
                 "caption": social_post.body,
-                "published_at": epoch_to_iso(social_post.publish_time),
-                "published_at_epoch": social_post.publish_time,
+                "published_at": epoch_to_iso(published_at_epoch),
+                "published_at_epoch": published_at_epoch,
                 "duration_sec": social_post.duration_sec,
                 "tags": list(social_post.tags or []),
             },
