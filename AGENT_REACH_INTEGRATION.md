@@ -1,110 +1,56 @@
 # Agent Reach Integration
 
-## 目的
+`Agent Reach` can call this project through any stdio MCP client such as `mcporter`.
 
-让 `Agent Reach` 通过 `mcporter` 直接调用这个 MCP，处理：
+## Call chain
 
-- 抖音视频链接
-- 小红书视频链接
-- 小红书图文笔记链接
+`Agent Reach skill` → MCP client → `social-media-toolkit` server → public toolkit / compatibility adapters
 
-默认输出：
+The historical MCP alias `douyin` can remain in an existing client configuration. The server itself now supports Douyin, Xiaohongshu, Bilibili, and YouTube.
 
-- `script.md`
-- `info.json`
+## MCP configuration
 
-## 实际调用链路
-
-调用链路如下：
-
-`Agent Reach skill` -> `mcporter` -> `douyin` MCP server alias -> `social_post_extractor_mcp`
-
-其中：
-
-- `Agent Reach` 负责让大模型知道“该调用哪个工具”
-- `MCP` 负责平台解析、统一编排、写出产物
-- 云端模型负责识别与轻整理
-
-## 哪部分是代码处理，哪部分是模型处理
-
-不是“全靠大模型自己想”，也不是“全靠本地代码硬处理”。
-
-代码负责：
-
-- 识别抖音 / 小红书链接
-- 解析页面和元数据
-- 判断是视频还是图文
-- 组织输出目录
-- 生成 `script.md` 和 `info.json`
-
-云端模型负责：
-
-- `paraformer-v2`：视频语音转文字
-- `qwen3-vl-flash`：小红书图文图片读字
-- `qwen-flash`：轻整理，只做分段、标点、少量明显错字修正
-
-## 默认配置
-
-推荐默认栈：
+Use an absolute interpreter path and keep credentials out of this JSON:
 
 ```json
 {
   "mcpServers": {
-    "douyin": {
-      "command": "/path/to/.venv/bin/python",
-      "args": ["-m", "social_post_extractor_mcp"],
-      "env": {
-        "ASR_PROVIDER": "bailian",
-        "ASR_MODEL": "paraformer-v2",
-        "VISION_PROVIDER": "bailian",
-        "VISION_MODEL": "qwen3-vl-flash",
-        "CLEAN_PROVIDER": "bailian",
-        "CLEAN_MODEL": "qwen-flash",
-        "BAILIAN_API_KEY": "YOUR_BAILIAN_API_KEY"
-      }
+    "social-media-toolkit": {
+      "command": "/ABSOLUTE/PATH/social-post-extractor-mcp/.venv/bin/python",
+      "args": ["-m", "social_post_extractor_mcp"]
     }
   }
 }
 ```
 
-## 兼容性说明
+Inject optional cloud-provider credentials with the MCP client's secret manager or an OS-level secret manager. Expected names are documented in `README.md`; values must never be written here.
 
-为了兼容 `Agent Reach` 里原来的调用方式，保留了旧工具名：
+## Preferred tools
 
+- `social_inspect`: normalized metadata, no persistent download.
+- `social_get_text`: GetNote → native subtitle → cloud ASR.
+- `social_download`: explicit media download with checksum manifest.
+- `social_get_comments`: supported public comments.
+- `social_capture_bundle`: combined normalized bundle.
+
+Legacy tools remain available for old Agent Reach prompts:
+
+- `parse_social_post_info`
+- `social_extract_transcript`
+- `social_capture_url`
+- `extract_social_post_script`
 - `parse_douyin_video_info`
 - `get_douyin_download_link`
 - `extract_douyin_text`
 
-同时新增统一工具：
+## Verification
 
-- `parse_social_post_info`
-- `extract_social_post_script`
+After changing the client configuration:
 
-这意味着原有 skill 不需要改提示词，也能继续工作；如果要利用小红书和统一产物，优先调用新工具。
+1. Run `uv run socialkit doctor`.
+2. List the MCP tool schemas from the client.
+3. Run an authorized metadata-only link for each required platform.
+4. Test text extraction separately so any cloud ASR cost is explicit.
+5. Test downloads only with an explicit temporary output directory.
 
-## 已验证结果
-
-已通过真实 `mcporter` / MCP 链路验证：
-
-- 小红书图文：成功
-- 抖音视频：成功
-- 小红书视频：成功
-
-验证重点：
-
-- `Agent Reach` 调用的 `douyin` server alias 可正常列出 schema
-- MCP 默认配置已切到百炼
-- 视频 ASR 不再走本地下载/转码慢路径
-
-## 安全约束
-
-敏感信息不要放进仓库。
-
-建议：
-
-- API Key 只放在本地 `mcporter.json` 或本地环境变量
-- 仓库只保留 `.env.example`
-- 不提交 `.env`
-- 不提交本地 `config/`
-
-如果密钥曾经出现在聊天记录、终端历史或截图里，建议尽快轮换。
+Historical smoke-test claims must not be treated as current proof after platform or dependency changes.

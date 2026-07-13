@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP server for Douyin, Xiaohongshu, and Bilibili extraction."""
+"""MCP compatibility layer for the public Social Media Toolkit."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 
+from social_media_toolkit import SocialMediaToolkit
+
 from .env_loader import load_default_env_files
 from .social_extractor import DEFAULT_ASR_PROVIDER, OwnerAnalyticsCommandProvider, SocialExtractorService
 
@@ -18,11 +20,12 @@ load_default_env_files(Path(__file__).resolve().parents[1])
 
 
 mcp = FastMCP(
-    "Social Post Extractor MCP Server",
-    dependencies=["requests", "ffmpeg-python", "mcp"],
+    "Social Media Toolkit MCP Server",
+    dependencies=["requests", "ffmpeg-python", "mcp", "yt-dlp"],
 )
 
 _SERVICE = SocialExtractorService()
+_TOOLKIT = SocialMediaToolkit()
 _OWNER_ANALYTICS = OwnerAnalyticsCommandProvider()
 
 
@@ -68,6 +71,29 @@ def get_douyin_comments_value(
     return _SERVICE.get_douyin_comments(share_link, sort_by=sort_by, limit=limit)
 
 
+def social_inspect_value(share_link: str) -> dict:
+    return _TOOLKIT.inspect(share_link)
+
+
+def social_get_text_value(
+    share_link: str,
+    *,
+    prefer_getnote: bool = True,
+    getnote_wait_sec: int = 300,
+    getnote_interval_sec: int = 25,
+    asr_provider: Optional[str] = None,
+    asr_model: Optional[str] = None,
+) -> dict:
+    return _TOOLKIT.get_text(
+        share_link,
+        prefer_getnote=prefer_getnote,
+        getnote_wait_sec=getnote_wait_sec,
+        getnote_interval_sec=getnote_interval_sec,
+        asr_provider=asr_provider,
+        asr_model=asr_model,
+    )
+
+
 def extract_social_post_script_value(
     share_link: str,
     *,
@@ -101,6 +127,124 @@ def parse_social_post_info(share_link: str) -> str:
     """自动识别抖音或小红书链接并返回结构化信息。"""
     try:
         return json.dumps(parse_social_post_info_value(share_link), ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_inspect(share_link: str) -> str:
+    """解析公开链接并返回统一 PostBundle；不下载媒体、不调用 ASR。"""
+    try:
+        return json.dumps(social_inspect_value(share_link), ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_get_text(
+    share_link: str,
+    prefer_getnote: bool = True,
+    getnote_wait_sec: int = 300,
+    getnote_interval_sec: int = 25,
+    asr_provider: Optional[str] = None,
+    asr_model: Optional[str] = None,
+) -> str:
+    """按 GetNote → 平台原生字幕 → 云端 ASR 的顺序获取文字。"""
+    try:
+        return json.dumps(
+            social_get_text_value(
+                share_link,
+                prefer_getnote=prefer_getnote,
+                getnote_wait_sec=getnote_wait_sec,
+                getnote_interval_sec=getnote_interval_sec,
+                asr_provider=asr_provider,
+                asr_model=asr_model,
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_get_comments(
+    share_link: str,
+    sort_by: str = "likes",
+    limit: int = 10,
+) -> str:
+    """获取平台支持的公开评论；当前稳定实现为抖音公开顶层评论。"""
+    try:
+        return json.dumps(
+            _TOOLKIT.get_comments(share_link, sort_by=sort_by, limit=limit),
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_download(
+    share_link: str,
+    output_dir: str,
+    include: str = "video,cover,images",
+) -> str:
+    """显式下载指定媒体，并返回本地路径、大小、MIME 与 SHA-256 清单。"""
+    try:
+        return json.dumps(
+            _TOOLKIT.download(share_link, output_dir=output_dir, include=include),
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_capture_bundle(
+    share_link: str,
+    include_text: bool = True,
+    include_comments: bool = False,
+    comment_sort: str = "likes",
+    comment_limit: int = 10,
+    output_dir: Optional[str] = None,
+    media: str = "video,cover,images",
+    prefer_getnote: bool = True,
+    getnote_wait_sec: int = 300,
+    getnote_interval_sec: int = 25,
+    asr_provider: Optional[str] = None,
+    asr_model: Optional[str] = None,
+) -> str:
+    """生成统一 PostBundle，并按需附加文字、评论和显式媒体下载。"""
+    try:
+        return json.dumps(
+            _TOOLKIT.capture(
+                share_link,
+                include_text=include_text,
+                include_comments=include_comments,
+                comment_sort=comment_sort,
+                comment_limit=comment_limit,
+                output_dir=output_dir,
+                media=media,
+                prefer_getnote=prefer_getnote,
+                getnote_wait_sec=getnote_wait_sec,
+                getnote_interval_sec=getnote_interval_sec,
+                asr_provider=asr_provider,
+                asr_model=asr_model,
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def social_doctor() -> str:
+    """检查依赖与所需 secret 名称；永不返回 secret 值。"""
+    try:
+        return json.dumps(_TOOLKIT.doctor(), ensure_ascii=False, indent=2)
     except Exception as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2)
 
@@ -338,10 +482,19 @@ def social_post_extraction_guide() -> str:
 - 小红书视频笔记
 - 小红书图文笔记
 - Bilibili 视频
+- YouTube 视频
 
 ## 推荐工具
-- `social_capture_url`: 统一采集链接并生成 script.md 和 info.json
-- `social_extract_transcript`: 只关心视频 transcript 时使用
+- `social_inspect`: 统一元数据，不下载文件
+- `social_get_text`: GetNote → 平台字幕 → 云端 ASR
+- `social_download`: 显式下载视频、封面或图片
+- `social_get_comments`: 获取已支持平台的公开评论
+- `social_capture_bundle`: 一次返回可移植 PostBundle
+- `social_doctor`: 检查依赖和 secret 名称，不显示 secret 值
+
+## 旧版兼容工具
+- `social_capture_url`: 旧版 script.md + info.json 流程
+- `social_extract_transcript`: 旧版 transcript 流程
 - `get_douyin_comments`: 获取点赞最高或最近的 10 条抖音公开顶层评论（纯 HTTP，不使用浏览器/CDP）
 - `social_analyze_owner_posts`: 拉取自己账号的复盘数据
 - `parse_social_post_info`: 只解析基础信息
@@ -352,9 +505,13 @@ def social_post_extraction_guide() -> str:
 - `get_douyin_download_link`
 - `extract_douyin_text`
 
-## 默认输出
-- `script.md`: 整理稿 + 原始内容
-- `info.json`: 结构化 metadata、作者信息、公开视频指标、媒体信息、transcript、图片分析、模型信息和状态
+## 文字优先级
+1. GetNote `web_page.content`
+2. YouTube / Bilibili 平台原生字幕
+3. 配置的云端 ASR
+
+媒体只有在调用 `social_download`，或给 `social_capture_bundle` 传入
+`output_dir` 时才会写入磁盘。
 
 ## 模型切换
 支持通过环境变量设置默认 provider/model，也支持在单次调用时覆盖：

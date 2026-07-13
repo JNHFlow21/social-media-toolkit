@@ -763,6 +763,16 @@ class SocialExtractorService:
         sort_by: str = "likes",
     ) -> dict[str, Any]:
         post = self.parse_social_post(share_text)
+        return self.get_douyin_comments_for_post(post, limit=limit, sort_by=sort_by)
+
+    def get_douyin_comments_for_post(
+        self,
+        post: SocialPost,
+        *,
+        limit: int = DOUYIN_PUBLIC_COMMENT_LIMIT,
+        sort_by: str = "likes",
+    ) -> dict[str, Any]:
+        """Fetch comments for an already parsed post without resolving it twice."""
         if post.platform != "douyin":
             raise ValueError("评论工具目前仅支持抖音链接")
 

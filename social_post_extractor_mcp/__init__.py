@@ -1,8 +1,9 @@
-"""Social Post Extractor MCP server."""
+"""Backward-compatible MCP package for Social Media Toolkit."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "JNHFlow21"
 __email__ = "JNHFlow21@users.noreply.github.com"
+
 
 def main():
     from .server import main as server_main
