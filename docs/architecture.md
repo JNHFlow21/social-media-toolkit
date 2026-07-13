@@ -1,81 +1,74 @@
 # Architecture
 
-## Goal
+## One orchestrator
 
-Provide one reusable, read-first social-media toolkit without coupling the core to a specific AI client, knowledge base, or browser session.
+`SocialMediaToolkit` is the only workflow orchestrator used by the Python SDK,
+CLI, and MCP transport.
 
 ```mermaid
 flowchart LR
     U["URL or share text"] --> S["SocialMediaToolkit"]
-    S --> A["Platform adapter"]
-    A --> B["PostBundle metadata"]
-    S --> T["Text router"]
-    T --> G["GetNote"]
-    T --> N["Native subtitle"]
-    T --> C["Cloud ASR"]
-    S --> D["Explicit downloader"]
-    S --> R["Public comments adapter"]
+    S --> R["PlatformRouter"]
+    R --> P["Public platform adapter"]
+    P --> B["PostBundle"]
+    S --> T["One text route"]
+    T --> G["GetNote original content"]
+    G --> N["Native subtitle"]
+    N --> V["Volcengine cloud ASR"]
+    S --> D["Explicit MediaDownloader"]
+    S --> C["Douyin public comments"]
     B --> O["SDK / CLI / MCP"]
-    G --> O
-    N --> O
-    C --> O
+    T --> O
     D --> O
-    R --> O
+    C --> O
 ```
 
 ## Packages
 
 ### `social_media_toolkit`
 
-The public API.
-
-- `service.py`: orchestration and deterministic fallback policy.
-- `models.py`: versioned `PostBundle` and text result contracts.
-- `platforms/`: platform adapters, including YouTube.
-- `providers/`: optional providers such as GetNote.
-- `downloader.py`: explicit media downloads and checksum manifests.
+- `service.py`: the only orchestration policy.
+- `models.py`: stable `PostBundle` and text-result contracts.
+- `platforms/core.py`: public models, Douyin/Xiaohongshu/Bilibili adapters, and router.
+- `platforms/youtube.py`: YouTube metadata and native subtitles through `yt-dlp`.
+- `providers/getnote.py`: GetNote original-content reader.
+- `providers/volcengine.py`: the only cloud ASR implementation.
+- `downloader.py`: explicit downloads and SHA-256 manifests.
 - `cli.py`: JSON CLI.
 
 ### `social_post_extractor_mcp`
 
-The existing implementation and compatibility layer.
+A thin stdio MCP transport. It owns no alternate extraction logic and creates
+exactly one `SocialMediaToolkit` instance.
 
-- Mature Douyin, Xiaohongshu, and Bilibili adapters.
-- Cloud ASR, image OCR/vision, and legacy artifact generation.
-- MCP server exporting both the new public tools and old tool aliases.
+## Text contract
 
-The public service currently reuses these mature adapters. Future refactors should move adapters inward without breaking MCP aliases or the `PostBundle` schema.
+1. Ask GetNote for original content.
+2. If unavailable, parse the platform.
+3. Use native Bilibili/YouTube subtitles when present.
+4. For a video still without text, call Volcengine big-model flash ASR.
+5. If Volcengine fails, return the reason and stop.
 
-`source.platform_data` preserves adapter-specific public fields. `post.published_at`
-is UTC ISO-8601, while `post.published_at_epoch` keeps the source epoch for
-lossless interoperability.
+There is no provider selector, local ASR, image OCR, LLM cleanup, or silent
+fallback.
 
-## Text routing
+## Side effects
 
-The order is a product contract, not a heuristic:
-
-1. Call GetNote when enabled.
-2. Treat non-empty `data.note.web_page.content` as success, even if task metadata has a stale error.
-3. If GetNote is unavailable or fails, inspect the platform.
-4. Use YouTube or Bilibili native subtitles when present.
-5. For a video with no native subtitle, use the explicitly configured cloud ASR provider.
-6. Return provider, route, model, and warnings.
-
-No local ASR is silently selected.
-
-## Side-effect boundary
-
-- `inspect`: network reads only.
-- `get_text`: network reads and possibly paid cloud ASR; no persistent media output.
+- `inspect`: public network reads only.
+- `get_text`: public reads and possibly paid Volcengine ASR; no persistent media.
 - `get_comments`: public network reads only.
-- `download`: persistent file writes, always requires `output_dir`.
-- `capture`: enrichment is opt-in; media writes occur only when `output_dir` is supplied.
+- `download`: persistent writes and always requires `output_dir`.
+- `capture`: media writes only when `output_dir` is supplied.
 
-Publishing is intentionally absent because it mutates external accounts.
+ASR media and extracted MP3 files live only inside a temporary directory and
+are deleted when the call ends.
 
-## Security boundary
+## Security
 
-- Secrets are received only through the process environment/provider tooling.
-- Results never include secret values.
-- Downloader accepts HTTP(S), rejects localhost/private IP literals, sanitizes filenames, limits bytes, and records SHA-256.
+- Runtime secret name: `VOLCENGINE_ASR_API_KEY` only.
+- Secret values never appear in results or logs.
+- The project does not load repository `.env` files.
+- Agent Switch is used through an inherited file descriptor when available.
+- Downloader accepts HTTP(S), rejects local/private literal IPs, limits bytes,
+  sanitizes filenames, and records SHA-256.
 - Tests use synthetic fixtures.

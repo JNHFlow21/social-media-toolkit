@@ -1,6 +1,6 @@
-"""Backward-compatible MCP package for Social Media Toolkit."""
+"""MCP transport package for Social Media Toolkit."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "JNHFlow21"
 __email__ = "JNHFlow21@users.noreply.github.com"
 

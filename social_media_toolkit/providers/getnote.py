@@ -1,14 +1,25 @@
+"""GetNote original-content provider.
+
+Current GetNote CLI versions wait for URL processing in ``getnote save``. The
+toolkit therefore performs one save, then at most one explicit note/task lookup
+when an identifier is returned. It does not maintain a second polling engine.
+"""
+
 from __future__ import annotations
 
 import json
 import shutil
 import subprocess
-import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 
-GETNOTE_INSTALL_HINT = "Install GetNote first: npm install -g @getnote/cli, then run: getnote auth login"
+GETNOTE_DOCS_URL = "https://www.npmjs.com/package/@getnote/cli"
+GETNOTE_REPOSITORY_URL = "https://github.com/iswalle/getnote-cli"
+GETNOTE_INSTALL_HINT = (
+    "Install GetNote: npm install -g @getnote/cli; then run: getnote auth login. "
+    f"Docs: {GETNOTE_DOCS_URL}"
+)
 
 
 @dataclass
@@ -19,7 +30,6 @@ class GetNoteResult:
     note_id: Optional[str] = None
     task_id: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
-    attempts: int = 0
 
     @property
     def success(self) -> bool:
@@ -27,135 +37,121 @@ class GetNoteResult:
 
 
 class GetNoteTextProvider:
-    """GetNote-first text provider without storing credentials in this project."""
+    """Read original text through GetNote without storing credentials here."""
 
     def __init__(
         self,
         executable: str = "getnote",
         *,
         runner: Optional[Callable[[list[str], int], dict[str, Any]]] = None,
-        sleeper: Callable[[float], None] = time.sleep,
-        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.executable = executable
         self._runner = runner or self._run_json
-        self._sleeper = sleeper
-        self._clock = clock
 
     def available(self) -> bool:
         return shutil.which(self.executable) is not None
 
     def authenticated(self, *, timeout_sec: int = 15) -> bool:
-        """Check auth without returning or logging any credential material."""
         if not self.available():
             return False
         try:
-            proc = subprocess.run(
+            process = subprocess.run(
                 [self.executable, "auth", "status"],
                 text=True,
                 capture_output=True,
                 timeout=timeout_sec,
+                check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
             return False
-        output = f"{proc.stdout}\n{proc.stderr}".lower()
-        rejected = "not authenticated" in output or "unauthenticated" in output
-        return proc.returncode == 0 and "authenticated" in output and not rejected
+        output = f"{process.stdout}\n{process.stderr}".lower()
+        rejected = any(
+            marker in output
+            for marker in ("not authenticated", "unauthenticated", "not logged in", "未登录", "未认证")
+        )
+        return process.returncode == 0 and not rejected
 
-    def extract(
-        self,
-        url: str,
-        *,
-        wait_sec: int = 300,
-        interval_sec: int = 25,
-        command_timeout_sec: int = 300,
-        min_content_chars: int = 1,
-    ) -> GetNoteResult:
+    def extract(self, url: str, *, command_timeout_sec: int = 300) -> GetNoteResult:
         if not self.available():
             return GetNoteResult(status="unavailable", warnings=[GETNOTE_INSTALL_HINT])
 
-        attempts = 1
         save_payload = self._runner(
             [self.executable, "save", url, "-o", "json"],
             command_timeout_sec,
         )
-        content = _note_content(save_payload)
-        task_id = _task_id(save_payload)
-        note_id = _note_id(save_payload)
-        if len(content) >= min_content_chars:
-            return GetNoteResult(
-                status="success",
-                text=content,
-                title=_note_title(save_payload),
-                note_id=note_id,
-                task_id=task_id,
-                attempts=attempts,
+        result = _result_from_payload(save_payload)
+        if result.success:
+            return result
+
+        note_id = result.note_id
+        task_id = result.task_id
+        task_payload: dict[str, Any] | None = None
+
+        if not note_id and task_id:
+            task_payload = self._runner(
+                [self.executable, "task", task_id, "-o", "json"],
+                command_timeout_sec,
             )
+            task_result = _result_from_payload(task_payload)
+            if task_result.success:
+                return task_result
+            note_id = task_result.note_id
 
-        if not task_id and not note_id:
-            warning = _payload_error(save_payload) or "GetNote returned no content and no follow-up task/note id"
-            if _looks_like_auth_error(warning):
-                warning = f"{warning}. Run: getnote auth login"
-            return GetNoteResult(status="failed", warnings=[warning], attempts=attempts)
-
-        deadline = self._clock() + max(wait_sec, 0)
-        last_task = save_payload
-        while True:
-            if note_id:
-                attempts += 1
-                note_payload = self._runner(
-                    [self.executable, "note", str(note_id), "-o", "json"],
-                    command_timeout_sec,
-                )
-                content = _note_content(note_payload)
-                if len(content) >= min_content_chars:
-                    warnings = []
-                    stale_error = _payload_error(last_task)
-                    if stale_error:
-                        warnings.append(f"GetNote stale task message ignored because content is ready: {stale_error}")
-                    return GetNoteResult(
-                        status="success",
-                        text=content,
-                        title=_note_title(note_payload),
-                        note_id=note_id,
-                        task_id=task_id,
-                        warnings=warnings,
-                        attempts=attempts,
+        if note_id:
+            note_payload = self._runner(
+                [self.executable, "note", note_id, "-o", "json"],
+                command_timeout_sec,
+            )
+            note_result = _result_from_payload(note_payload)
+            note_result.task_id = task_id
+            if note_result.success:
+                stale_error = _payload_error(task_payload or save_payload)
+                if stale_error:
+                    note_result.warnings.append(
+                        f"GetNote stale task message ignored because original content is ready: {stale_error}"
                     )
+                return note_result
 
-            if task_id:
-                attempts += 1
-                last_task = self._runner(
-                    [self.executable, "task", str(task_id), "-o", "json"],
-                    command_timeout_sec,
-                )
-                note_id = _note_id(last_task) or note_id
-
-            if self._clock() >= deadline:
-                warning = _payload_error(last_task) or "GetNote did not produce web_page.content before the wait budget expired"
-                return GetNoteResult(
-                    status="failed",
-                    note_id=note_id,
-                    task_id=task_id,
-                    warnings=[warning],
-                    attempts=attempts,
-                )
-            self._sleeper(max(interval_sec, 1))
+        warning = _payload_error(task_payload or save_payload) or "GetNote returned no original content"
+        if _looks_like_auth_error(warning):
+            warning = f"{warning}. Run: getnote auth login"
+        return GetNoteResult(
+            status="failed",
+            note_id=note_id,
+            task_id=task_id,
+            warnings=[warning],
+        )
 
     @staticmethod
     def _run_json(command: list[str], timeout: int) -> dict[str, Any]:
         try:
-            proc = subprocess.run(command, text=True, capture_output=True, timeout=timeout)
+            process = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
         except subprocess.TimeoutExpired:
             return {"success": False, "_error": f"GetNote command timed out after {timeout}s"}
         try:
-            payload = json.loads(proc.stdout or "{}")
+            payload = json.loads(process.stdout or "{}")
         except json.JSONDecodeError:
             payload = {"success": False, "_error": "GetNote returned non-JSON output"}
-        payload["_returncode"] = proc.returncode
-        if proc.returncode and not _payload_error(payload):
-            payload["_error"] = f"GetNote command failed with exit code {proc.returncode}"
+        payload["_returncode"] = process.returncode
+        if process.returncode and not _payload_error(payload):
+            payload["_error"] = f"GetNote command failed with exit code {process.returncode}"
         return payload
+
+
+def _result_from_payload(payload: dict[str, Any]) -> GetNoteResult:
+    return GetNoteResult(
+        status="success" if _note_original_content(payload) else "failed",
+        text=_note_original_content(payload) or None,
+        title=_note_title(payload),
+        note_id=_note_id(payload),
+        task_id=_task_id(payload),
+    )
 
 
 def _data(payload: dict[str, Any]) -> dict[str, Any]:
@@ -168,8 +164,15 @@ def _note(payload: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _note_content(payload: dict[str, Any]) -> str:
-    page = _note(payload).get("web_page")
+def _note_original_content(payload: dict[str, Any]) -> str:
+    note = _note(payload)
+    # Current CLI calls the original webpage field ``web_content``. Earlier
+    # server responses nested the same original text under web_page.content.
+    # Supporting both response shapes does not change the routing policy.
+    direct = note.get("web_content")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    page = note.get("web_page")
     if isinstance(page, dict) and isinstance(page.get("content"), str):
         return page["content"].strip()
     return ""

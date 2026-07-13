@@ -1,39 +1,34 @@
 # Capability Matrix
 
-## Public core
-
 | Capability | Douyin | Xiaohongshu | Bilibili | YouTube |
 |---|---:|---:|---:|---:|
-| Detect shared URL | ✅ | ✅ | ✅ | ✅ |
-| Post metadata | ✅ | ✅ | ✅ | ✅ |
-| Author metadata | ✅ | ✅ | ✅ | ✅ |
+| Shared URL detection | ✅ | ✅ | ✅ | ✅ |
+| Post / author metadata | ✅ | ✅ | ✅ | ✅ |
 | Public metrics | ✅ | ✅ | ✅ | ✅ when exposed |
-| GetNote canonical text | ✅ | ✅ | ✅ | ✅ |
+| GetNote original content | ✅ | ✅ | ✅ | ✅ |
 | Native subtitles | — | — | ✅ when exposed | ✅ manual, then automatic |
-| Cloud ASR fallback | ✅ | ✅ video | ✅ | ✅ |
+| Volcengine cloud ASR | ✅ video | ✅ video | ✅ | ✅ |
 | Cover download | ✅ | ✅ | ✅ | ✅ |
 | Video download | ✅ direct | ✅ direct | ✅ via yt-dlp | ✅ via yt-dlp |
-| Image-note download | — | ✅ | — | — |
+| Image-post download | ✅ when exposed | ✅ | — | — |
 | Public comments | ✅ top-level sample | — | — | — |
 
-## Comment semantics
+## Requirements and cost
 
-The Douyin public mobile share endpoint currently returns at most ten top-level comments plus reply counts. It does not return reply bodies. `likes` and `recent` sort only the retrieved public sample.
+| Dependency | Used for | Cost |
+|---|---|---|
+| GetNote CLI | First text route | CLI is open source; service OpenAPI may require membership |
+| `VOLCENGINE_ASR_API_KEY` | Video without usable text/subtitles | May incur Volcengine usage charges |
+| ffmpeg | Temporary ASR audio; stream merge | Free/open source |
+| yt-dlp | YouTube metadata; Bilibili/YouTube downloads | Free/open source |
 
-## Legacy optional capabilities
+## Honest limitations
 
-The compatibility package still includes:
-
-- Xiaohongshu image OCR / vision extraction.
-- Markdown and JSON artifact generation.
-- Browser-backed owner analytics for a user's own logged-in account.
-
-These are not required by the new public read API and should remain isolated from it.
-
-## Known limitations
-
-- Platforms can change public endpoints or require additional verification.
-- Native subtitles may be unavailable for a particular video.
-- Some YouTube/Bilibili media requires `ffmpeg` because audio and video are separate streams.
-- Cloud ASR requires a configured provider and may incur cost.
-- The toolkit does not bypass access controls, retrieve private comments, or automate publishing.
+- Douyin comments are at most the public endpoint's returned top-level sample;
+  replies are counted but reply bodies are not fetched.
+- Platform pages and public endpoints can change.
+- Native subtitles are not guaranteed for a particular video.
+- No local ASR is available. A Volcengine failure is terminal and explicit.
+- No OCR/Vision fallback is available. GetNote failure on an image post falls
+  back only to the platform's text body.
+- No browser automation, logged-in analytics, publishing, or private data access.

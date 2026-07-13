@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "social-media-toolkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Public SDK, CLI, and MCP toolkit for extracting text, metadata, media, and comments from social posts"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -21,9 +21,8 @@ keywords = [
     "youtube",
     "transcript",
     "asr",
-    "ocr",
-    "bailian",
-    "dashscope",
+    "volcengine",
+    "cloud-asr",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -38,14 +37,6 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
     "requests",
-    "ffmpeg-python",
-    "tqdm",
-    "dashscope",
-    "fastapi",
-    "uvicorn",
-    "jinja2",
-    "websockets",
-    "python-socks",
     "yt-dlp>=2026.7.4",
 ]
 

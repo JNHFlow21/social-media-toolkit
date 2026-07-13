@@ -9,7 +9,7 @@ from xml.etree import ElementTree
 
 import requests
 
-from social_post_extractor_mcp.social_extractor import HEADERS, PlatformAdapter, SocialPost, _normalize_media_url
+from .core import HEADERS, PlatformAdapter, SocialPost, _normalize_media_url
 
 
 YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
@@ -52,6 +52,7 @@ class YouTubePlatformAdapter(PlatformAdapter):
         author_name = info.get("channel") or info.get("uploader")
         thumbnail = _normalize_media_url(info.get("thumbnail"))
         playable_url = _select_playable_url(info)
+        audio_url = _select_audio_url(info)
         timestamp = info.get("timestamp") or _upload_date_epoch(info.get("upload_date"))
 
         public_metrics = {
@@ -76,6 +77,7 @@ class YouTubePlatformAdapter(PlatformAdapter):
             "cover_url": thumbnail,
             "image_urls": [thumbnail] if thumbnail else [],
             "video_url": playable_url,
+            "audio_url": audio_url,
         }
         extra = {
             "subtitle_text": subtitle_text,
@@ -221,6 +223,18 @@ def _select_playable_url(info: dict[str, Any]) -> Optional[str]:
             candidates.sort(key=lambda item: (_as_int(item.get("height")), _as_int(item.get("tbr"))))
             return _normalize_media_url(candidates[-1]["url"])
     return None
+
+
+def _select_audio_url(info: dict[str, Any]) -> Optional[str]:
+    formats = [item for item in info.get("formats") or [] if isinstance(item, dict) and item.get("url")]
+    candidates = [
+        item for item in formats
+        if item.get("acodec") not in {None, "none"} and item.get("vcodec") in {None, "none"}
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: _as_int(item.get("abr") or item.get("tbr")))
+    return _normalize_media_url(candidates[-1]["url"])
 
 
 def _upload_date_epoch(value: Any) -> Optional[int]:

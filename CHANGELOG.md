@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 - 2026-07-13
+
+- Reduced SDK, CLI, and MCP to one `SocialMediaToolkit` orchestrator.
+- Removed the legacy MCP aliases, artifact writer, browser-backed owner analytics,
+  OCR/Vision/cleanup pipeline, and repository environment-file loader.
+- Standardized the final video text route on Volcengine big-model flash ASR using
+  only `VOLCENGINE_ASR_API_KEY`.
+- Removed every alternate cloud-ASR provider and all provider/model selectors.
+- Made cloud failure terminal and explicit; no local ASR fallback exists.
+- Updated GetNote parsing for the current `web_content` original-text field while
+  accepting the previous nested response shape.
+- Separated Bilibili video and audio stream URLs and added Douyin image-post parsing.
+- Added installation/doctor guidance with official links, requirements, and cost boundaries.
+
 ## 0.2.0 - 2026-07-13
 
 - Introduced the public `social_media_toolkit` Python SDK.

@@ -1,47 +1,54 @@
+"""The single public orchestrator for Social Media Toolkit."""
+
 from __future__ import annotations
 
-import os
 import shutil
 from typing import Any, Optional, Sequence
 
-from social_post_extractor_mcp.social_extractor import (
-    DEFAULT_ASR_MODEL,
-    DEFAULT_ASR_PROVIDER,
-    BilibiliPlatformAdapter,
-    DouyinPlatformAdapter,
-    ExtractionContext,
-    SocialExtractorService,
-    SocialPost,
-    XiaoHongShuPlatformAdapter,
-    default_model_for_provider,
-    fetch_douyin_public_comments,
-    provider_asr_config,
-    provider_volcengine_speech_config,
-)
-
 from .downloader import MediaDownloader
 from .models import PostBundle, TextExtractionResult
+from .platforms.core import (
+    BilibiliPlatformAdapter,
+    DouyinPlatformAdapter,
+    PlatformRouter,
+    SocialPost,
+    XiaoHongShuPlatformAdapter,
+)
 from .platforms.youtube import YouTubePlatformAdapter
-from .providers.getnote import GETNOTE_INSTALL_HINT, GetNoteTextProvider
+from .providers.getnote import (
+    GETNOTE_DOCS_URL,
+    GETNOTE_INSTALL_HINT,
+    GetNoteTextProvider,
+)
+from .providers.volcengine import (
+    VOLCENGINE_ASR_DOCS_URL,
+    VOLCENGINE_ASR_PRODUCT_URL,
+    VOLCENGINE_ASR_RESOURCE_ID,
+    VOLCENGINE_ASR_SECRET_NAME,
+    VolcengineASR,
+)
 
 
 class SocialMediaToolkit:
-    """Public, side-effect-explicit API for social content extraction.
+    """One deterministic path for metadata, text, media, and comments.
 
-    Metadata inspection never writes files. Text extraction uses the following
-    precedence: GetNote, native platform subtitles, then configured cloud ASR.
-    Media is downloaded only through :meth:`download` or :meth:`capture` with
-    an explicit ``output_dir``.
+    Text always follows this contract:
+
+    ``GetNote original content -> native subtitle -> Volcengine cloud ASR``.
+
+    There is no provider selector, local ASR, OCR, cleanup model, browser path,
+    or implicit persistent download in this orchestrator.
     """
 
     def __init__(
         self,
         *,
-        extractor: Optional[SocialExtractorService] = None,
+        router: Optional[PlatformRouter] = None,
         getnote: Optional[GetNoteTextProvider] = None,
+        asr: Optional[VolcengineASR] = None,
         downloader: Optional[MediaDownloader] = None,
     ) -> None:
-        self.extractor = extractor or SocialExtractorService(
+        self.router = router or PlatformRouter(
             platform_adapters=[
                 DouyinPlatformAdapter(),
                 XiaoHongShuPlatformAdapter(),
@@ -50,58 +57,41 @@ class SocialMediaToolkit:
             ]
         )
         self.getnote = getnote or GetNoteTextProvider()
+        self.asr = asr or VolcengineASR()
         self.downloader = downloader or MediaDownloader()
 
     def inspect(self, url: str) -> dict[str, Any]:
-        """Return a normalized PostBundle without downloading media."""
-        post = self.extractor.parse_social_post(url)
-        return PostBundle.from_social_post(post).to_dict()
+        """Return a normalized PostBundle without downloading media or running ASR."""
+        return PostBundle.from_social_post(self.router.parse(url)).to_dict()
 
-    def get_text(
-        self,
-        url: str,
-        *,
-        prefer_getnote: bool = True,
-        getnote_wait_sec: int = 300,
-        getnote_interval_sec: int = 25,
-        asr_provider: Optional[str] = None,
-        asr_model: Optional[str] = None,
-        _post: Optional[SocialPost] = None,
-    ) -> dict[str, Any]:
-        """Extract canonical text with deterministic provider precedence."""
+    def get_text(self, url: str, *, _post: Optional[SocialPost] = None) -> dict[str, Any]:
+        """Get canonical text through the one supported text route."""
         warnings: list[str] = []
 
-        if prefer_getnote:
-            try:
-                getnote_result = self.getnote.extract(
-                    url,
-                    wait_sec=getnote_wait_sec,
-                    interval_sec=getnote_interval_sec,
-                )
-            except Exception as exc:
-                warnings.append(f"GetNote failed unexpectedly: {exc}")
-            else:
-                if getnote_result.success:
-                    result = TextExtractionResult(
-                        status="success",
-                        provider="getnote",
-                        text=getnote_result.text,
-                        platform=_post.platform if _post else self._infer_platform(url),
-                        post_id=_post.post_id if _post else None,
-                        title=getnote_result.title or (_post.title if _post else None),
-                        warnings=list(getnote_result.warnings),
-                        metadata={
-                            "route": "getnote.web_page.content",
-                            "note_id": getnote_result.note_id,
-                            "task_id": getnote_result.task_id,
-                            "attempts": getnote_result.attempts,
-                        },
-                    )
-                    return result.to_dict()
-                warnings.extend(getnote_result.warnings)
+        try:
+            getnote_result = self.getnote.extract(url)
+        except Exception as exc:
+            warnings.append(f"GetNote failed: {exc}")
+        else:
+            if getnote_result.success:
+                return TextExtractionResult(
+                    status="success",
+                    provider="getnote",
+                    text=getnote_result.text,
+                    platform=_post.platform if _post else self._infer_platform(url),
+                    post_id=_post.post_id if _post else None,
+                    title=getnote_result.title or (_post.title if _post else None),
+                    warnings=list(getnote_result.warnings),
+                    metadata={
+                        "route": "getnote.original_content",
+                        "note_id": getnote_result.note_id,
+                        "task_id": getnote_result.task_id,
+                    },
+                ).to_dict()
+            warnings.extend(getnote_result.warnings)
 
         try:
-            post = _post or self.extractor.parse_social_post(url)
+            post = _post or self.router.parse(url)
         except Exception as exc:
             return TextExtractionResult(
                 status="error",
@@ -109,7 +99,7 @@ class SocialMediaToolkit:
                 text=None,
                 platform=self._infer_platform(url),
                 warnings=_dedupe(warnings + [f"Platform extraction failed: {exc}"]),
-                metadata={"route": "failed_before_platform_fallback"},
+                metadata={"route": "platform_extraction_failed"},
             ).to_dict()
 
         native_subtitle = (post.extra or {}).get("subtitle_text")
@@ -152,57 +142,55 @@ class SocialMediaToolkit:
                 metadata={"route": "no_text_available"},
             ).to_dict()
 
-        resolved_provider = asr_provider or os.getenv("ASR_PROVIDER") or DEFAULT_ASR_PROVIDER
-        resolved_model = (
-            asr_model
-            or os.getenv("ASR_MODEL")
-            or default_model_for_provider(resolved_provider, "asr")
-            or DEFAULT_ASR_MODEL
-        )
-        provider = self.extractor.asr_providers.get(resolved_provider)
-        if provider is None:
-            return TextExtractionResult(
-                status="error",
-                provider="cloud_asr",
-                text=None,
-                platform=post.platform,
-                post_id=post.post_id,
-                title=post.title,
-                warnings=_dedupe(warnings + [f"ASR provider is not supported: {resolved_provider}"]),
-                metadata={"route": "cloud_asr", "asr_provider": resolved_provider, "asr_model": resolved_model},
-            ).to_dict()
-
-        context = ExtractionContext(asr_provider=resolved_provider, asr_model=resolved_model)
         try:
-            transcript = provider.transcribe(post, context)
+            transcript = self.asr.transcribe(post).strip()
         except Exception as exc:
             return TextExtractionResult(
                 status="error",
-                provider="cloud_asr",
+                provider=self.asr.provider_name,
                 text=None,
                 platform=post.platform,
                 post_id=post.post_id,
                 title=post.title,
-                warnings=_dedupe(warnings + [f"Cloud ASR failed: {exc}"]),
-                metadata={"route": "cloud_asr", "asr_provider": resolved_provider, "asr_model": resolved_model},
+                warnings=_dedupe(warnings + [str(exc)]),
+                metadata={
+                    "route": "volcengine.cloud_asr_failed",
+                    "secret_name": VOLCENGINE_ASR_SECRET_NAME,
+                    "docs_url": VOLCENGINE_ASR_DOCS_URL,
+                    "local_fallback": False,
+                },
             ).to_dict()
 
-        transcript = (transcript or "").strip()
+        if not transcript:
+            return TextExtractionResult(
+                status="error",
+                provider=self.asr.provider_name,
+                text=None,
+                platform=post.platform,
+                post_id=post.post_id,
+                title=post.title,
+                warnings=_dedupe(warnings + ["Volcengine cloud ASR returned empty text"]),
+                metadata={"route": "volcengine.cloud_asr_empty", "local_fallback": False},
+            ).to_dict()
+
         return TextExtractionResult(
-            status="success" if transcript else "error",
-            provider="cloud_asr",
-            text=transcript or None,
+            status="success",
+            provider=self.asr.provider_name,
+            text=transcript,
             platform=post.platform,
             post_id=post.post_id,
             title=post.title,
-            warnings=_dedupe(warnings + ([] if transcript else ["Cloud ASR returned empty text"])),
-            metadata={"route": "cloud_asr", "asr_provider": resolved_provider, "asr_model": resolved_model},
+            warnings=_dedupe(warnings),
+            metadata={
+                "route": "volcengine.bigmodel_flash",
+                "resource_id": VOLCENGINE_ASR_RESOURCE_ID,
+                "local_fallback": False,
+            },
         ).to_dict()
 
     def get_comments(self, url: str, *, sort_by: str = "likes", limit: int = 10) -> dict[str, Any]:
-        """Return public comments when the platform adapter supports them."""
-        post = self.extractor.parse_social_post(url)
-        return self._comments_for_post(post, sort_by=sort_by, limit=limit)
+        post = self.router.parse(url)
+        return self.router.get_douyin_comments_for_post(post, sort_by=sort_by, limit=limit)
 
     def download(
         self,
@@ -211,8 +199,7 @@ class SocialMediaToolkit:
         output_dir: str,
         include: Sequence[str] | str = ("video", "cover", "images"),
     ) -> dict[str, Any]:
-        """Download explicitly requested media and return a checksum manifest."""
-        post = self.extractor.parse_social_post(url)
+        post = self.router.parse(url)
         return self.downloader.download_post(post, output_dir=output_dir, include=include)
 
     def capture(
@@ -225,41 +212,42 @@ class SocialMediaToolkit:
         comment_limit: int = 10,
         output_dir: Optional[str] = None,
         media: Sequence[str] | str = ("video", "cover", "images"),
-        prefer_getnote: bool = True,
-        getnote_wait_sec: int = 300,
-        getnote_interval_sec: int = 25,
-        asr_provider: Optional[str] = None,
-        asr_model: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Build one normalized bundle and optionally enrich text/comments/media."""
-        post = self.extractor.parse_social_post(url)
+        """Create one bundle; persistent media remains opt-in through output_dir."""
+        post = self.router.parse(url)
         bundle = PostBundle.from_social_post(post)
 
         if include_text:
-            text_result = self.get_text(
-                url,
-                prefer_getnote=prefer_getnote,
-                getnote_wait_sec=getnote_wait_sec,
-                getnote_interval_sec=getnote_interval_sec,
-                asr_provider=asr_provider,
-                asr_model=asr_model,
-                _post=post,
-            )
+            text_result = self.get_text(url, _post=post)
             bundle.content.update(
                 {
                     "canonical_text": text_result.get("text"),
                     "text_provider": text_result.get("provider"),
-                    "transcript": text_result if text_result.get("provider") in {"platform_subtitle", "cloud_asr"} else None,
+                    "transcript": (
+                        text_result
+                        if text_result.get("provider") in {"platform_subtitle", self.asr.provider_name}
+                        else None
+                    ),
                 }
             )
             bundle.provenance["routes"].append(f"text:{text_result.get('provider') or 'failed'}")
             bundle.provenance["warnings"].extend(text_result.get("warnings") or [])
-            bundle.provenance["quality"] = "text_enriched" if text_result.get("status") == "success" else "metadata_only"
+            bundle.provenance["quality"] = (
+                "text_enriched" if text_result.get("status") == "success" else "metadata_only"
+            )
 
         if include_comments:
-            if post.platform == "douyin":
+            if post.platform != "douyin":
+                bundle.provenance["warnings"].append(
+                    f"Public comment extraction is not implemented for {post.platform}"
+                )
+            else:
                 try:
-                    comments = self._comments_for_post(post, sort_by=comment_sort, limit=comment_limit)
+                    comments = self.router.get_douyin_comments_for_post(
+                        post,
+                        sort_by=comment_sort,
+                        limit=comment_limit,
+                    )
                 except Exception as exc:
                     bundle.comments["coverage"] = "failed"
                     bundle.provenance["warnings"].append(f"Public comment extraction failed: {exc}")
@@ -273,10 +261,6 @@ class SocialMediaToolkit:
                         "reply_bodies_included": comments.get("reply_bodies_included", False),
                     }
                     bundle.provenance["routes"].append("comments:douyin_public_mobile_share_api")
-            else:
-                bundle.provenance["warnings"].append(
-                    f"Public comment extraction is not implemented for {post.platform}"
-                )
 
         result = bundle.to_dict()
         if output_dir:
@@ -284,109 +268,79 @@ class SocialMediaToolkit:
             result["provenance"]["routes"].append("media:explicit_download")
         return result
 
-    def _comments_for_post(self, post: SocialPost, *, sort_by: str, limit: int) -> dict[str, Any]:
-        if post.platform != "douyin":
-            raise ValueError("Public comment extraction is currently implemented only for Douyin")
-        helper = getattr(self.extractor, "get_douyin_comments_for_post", None)
-        if callable(helper):
-            return helper(post, sort_by=sort_by, limit=limit)
-        result = fetch_douyin_public_comments(
-            post.post_id,
-            referer=post.page_url or post.resolved_url,
-            sort_by=sort_by,
-            limit=limit,
-        )
-        result.update(
-            {
-                "status": "success",
-                "title": post.title,
-                "author_name": post.author_name,
-                "reported_comment_total": _as_int((post.public_metrics or {}).get("comments")),
-                "page_url": post.page_url,
-            }
-        )
-        return result
-
     def doctor(self) -> dict[str, Any]:
-        """Report local capability state without exposing secret values."""
-        asr_provider = os.getenv("ASR_PROVIDER") or DEFAULT_ASR_PROVIDER
-        asr_secret_names = {
-            "bailian": ["BAILIAN_API_KEY", "DASHSCOPE_API_KEY"],
-            "dashscope": ["BAILIAN_API_KEY", "DASHSCOPE_API_KEY"],
-            "doubao": ["DOUBAO_API_KEY", "ARK_API_KEY"],
-            "siliconflow": ["SILICONFLOW_API_KEY"],
-            "volcengine_speech": ["VOLCENGINE_SPEECH_APP_ID", "VOLCENGINE_SPEECH_ACCESS_TOKEN"],
-        }.get(asr_provider, [])
-        if asr_provider == "volcengine_speech":
-            asr_configured = provider_volcengine_speech_config() is not None
-        elif asr_provider in {"bailian", "dashscope", "doubao"}:
-            lookup = "bailian" if asr_provider == "dashscope" else asr_provider
-            asr_configured = provider_asr_config(lookup) is not None
-        else:
-            asr_configured = any(os.getenv(name) for name in asr_secret_names)
-
-        getnote_available = self.getnote.available()
-        getnote_authenticated = self.getnote.authenticated() if getnote_available else False
-        ffmpeg_available = shutil.which("ffmpeg") is not None
+        """Report readiness and setup links without exposing any secret value."""
+        getnote_installed = self.getnote.available()
+        getnote_authenticated = self.getnote.authenticated() if getnote_installed else False
+        asr_configured = self.asr.configured()
+        ffmpeg_installed = shutil.which("ffmpeg") is not None
         try:
             import yt_dlp  # noqa: F401
 
-            yt_dlp_available = True
+            yt_dlp_installed = True
         except ImportError:
-            yt_dlp_available = False
+            yt_dlp_installed = False
 
-        warnings = []
-        if not getnote_available:
+        warnings: list[str] = []
+        if not getnote_installed:
             warnings.append(GETNOTE_INSTALL_HINT)
         elif not getnote_authenticated:
             warnings.append("GetNote is installed but not authenticated. Run: getnote auth login")
-        if not ffmpeg_available:
-            warnings.append("Install ffmpeg to merge separate video/audio streams")
-        if not yt_dlp_available:
-            warnings.append("Install yt-dlp for YouTube and Bilibili media downloads")
         if not asr_configured:
             warnings.append(
-                f"Cloud ASR fallback is not configured; expected secret name(s): {', '.join(asr_secret_names) or 'provider-specific credentials'}"
+                f"Volcengine cloud ASR is not configured. Required secret: {VOLCENGINE_ASR_SECRET_NAME}. "
+                f"Setup: {VOLCENGINE_ASR_DOCS_URL}"
             )
+        if not ffmpeg_installed:
+            warnings.append("Install ffmpeg for temporary ASR audio and merged media downloads")
+        if not yt_dlp_installed:
+            warnings.append("Install yt-dlp for YouTube and Bilibili support")
 
         return {
             "status": (
                 "ready"
-                if getnote_authenticated and yt_dlp_available and ffmpeg_available and asr_configured
+                if getnote_authenticated and asr_configured and ffmpeg_installed and yt_dlp_installed
                 else "partial"
             ),
             "supported_platforms": ["douyin", "xiaohongshu", "bilibili", "youtube"],
-            "text_precedence": ["getnote", "platform_subtitle", "cloud_asr"],
+            "text_route": ["getnote", "platform_subtitle", "volcengine_cloud_asr"],
+            "local_asr_fallback": False,
             "capabilities": {
                 "getnote": {
-                    "installed": getnote_available,
+                    "installed": getnote_installed,
                     "authenticated": getnote_authenticated,
-                    "install_hint": GETNOTE_INSTALL_HINT,
+                    "install_command": "npm install -g @getnote/cli",
+                    "login_command": "getnote auth login",
+                    "docs_url": GETNOTE_DOCS_URL,
+                    "may_require_paid_membership": True,
                 },
-                "yt_dlp": {"installed": yt_dlp_available},
-                "ffmpeg": {"installed": ffmpeg_available},
-                "cloud_asr": {
-                    "provider": asr_provider,
+                "volcengine_cloud_asr": {
                     "configured": asr_configured,
-                    "expected_secret_names": asr_secret_names,
+                    "secret_name": VOLCENGINE_ASR_SECRET_NAME,
+                    "docs_url": VOLCENGINE_ASR_DOCS_URL,
+                    "product_url": VOLCENGINE_ASR_PRODUCT_URL,
+                    "may_incur_usage_cost": True,
                 },
+                "ffmpeg": {"installed": ffmpeg_installed, "free": True},
+                "yt_dlp": {"installed": yt_dlp_installed, "free": True},
             },
             "warnings": warnings,
         }
 
     def _infer_platform(self, url: str) -> Optional[str]:
-        for adapter in self.extractor.platform_adapters:
+        for adapter in self.router.platform_adapters:
             try:
-                if adapter.can_handle(url):
-                    name = adapter.__class__.__name__.lower()
-                    if "douyin" in name:
-                        return "douyin"
-                    if "xiaohongshu" in name:
-                        return "xiaohongshu"
-                    if "bilibili" in name:
-                        return "bilibili"
-                    if "youtube" in name:
-                        return "youtube"
+                if not adapter.can_handle(url):
+                    continue
+                name = adapter.__class__.__name__.lower()
+                if "douyin" in name:
+                    return "douyin"
+                if "xiaohongshu" in name:
+                    return "xiaohongshu"
+                if "bilibili" in name:
+                    return "bilibili"
+                if "youtube" in name:
+                    return "youtube"
             except Exception:
                 continue
         return None
@@ -398,10 +352,3 @@ def _dedupe(values: Sequence[str]) -> list[str]:
         if value and value not in output:
             output.append(value)
     return output
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0

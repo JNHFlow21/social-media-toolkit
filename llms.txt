@@ -1,6 +1,6 @@
 # Social Media Toolkit
 
-Public SDK, CLI, and MCP server for normalized social-media extraction.
+Public SDK, CLI, and MCP server for Douyin, Xiaohongshu, Bilibili, and YouTube.
 
 Read first:
 - README.md
@@ -8,35 +8,26 @@ Read first:
 - docs/architecture.md
 - docs/capabilities.md
 
-Core package:
-- social_media_toolkit
+Single orchestrator:
+- social_media_toolkit.service.SocialMediaToolkit
 
-Compatibility package:
-- social_post_extractor_mcp
-
-Supported platforms:
-- Douyin
-- Xiaohongshu
-- Bilibili
-- YouTube
-
-Text precedence:
-1. GetNote data.note.web_page.content
+Text route:
+1. GetNote original content
 2. Native platform subtitle
-3. Configured cloud ASR
+3. Volcengine cloud ASR using VOLCENGINE_ASR_API_KEY
+4. On failure, return the reason; never use local ASR
 
-Primary MCP tools:
+Only MCP tools:
 - social_inspect
 - social_get_text
-- social_download
 - social_get_comments
+- social_download
 - social_capture_bundle
 - social_doctor
 
-Important behavior:
-- Metadata inspection does not run ASR or persist media.
+Important:
+- No legacy aliases or second scheduler.
+- No OCR, LLM cleanup, browser analytics, or publishing.
 - Media download requires an explicit output directory.
-- Douyin comment sorting applies only to the retrieved public sample.
-- Preserve provenance and warnings.
-- Keep legacy MCP names backward compatible.
-- Never ask for, print, or store secret values in this repository. List secret names only and use a client/OS secret manager.
+- Never output or store secret values.
+- Never call a public comment sample a global ranking.

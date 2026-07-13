@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Social Post Extractor MCP 入口点
-"""
+"""Social Media Toolkit MCP entry point."""
 
 from .server import main
 

@@ -18,13 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser = subparsers.add_parser("inspect", help="Return normalized metadata without downloading media")
     inspect_parser.add_argument("url")
 
-    text_parser = subparsers.add_parser("text", help="GetNote -> native subtitle -> cloud ASR")
+    text_parser = subparsers.add_parser(
+        "text",
+        help="GetNote -> native subtitle -> Volcengine cloud ASR",
+    )
     text_parser.add_argument("url")
-    text_parser.add_argument("--no-getnote", action="store_true", help="Skip GetNote and use platform/ASR fallback")
-    text_parser.add_argument("--getnote-wait", type=int, default=300, metavar="SECONDS")
-    text_parser.add_argument("--getnote-interval", type=int, default=25, metavar="SECONDS")
-    text_parser.add_argument("--asr-provider")
-    text_parser.add_argument("--asr-model")
 
     comments_parser = subparsers.add_parser("comments", help="Fetch supported public comments")
     comments_parser.add_argument("url")
@@ -44,11 +42,6 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--output", dest="output_dir")
     capture_parser.add_argument("--media", default="video,cover,images")
     capture_parser.add_argument("--no-text", action="store_true")
-    capture_parser.add_argument("--no-getnote", action="store_true")
-    capture_parser.add_argument("--getnote-wait", type=int, default=300, metavar="SECONDS")
-    capture_parser.add_argument("--getnote-interval", type=int, default=25, metavar="SECONDS")
-    capture_parser.add_argument("--asr-provider")
-    capture_parser.add_argument("--asr-model")
 
     subparsers.add_parser("doctor", help="Check optional local dependencies and secret names")
     return parser
@@ -58,14 +51,7 @@ def run_command(args: argparse.Namespace, toolkit: SocialMediaToolkit) -> dict[s
     if args.command == "inspect":
         return toolkit.inspect(args.url)
     if args.command == "text":
-        return toolkit.get_text(
-            args.url,
-            prefer_getnote=not args.no_getnote,
-            getnote_wait_sec=args.getnote_wait,
-            getnote_interval_sec=args.getnote_interval,
-            asr_provider=args.asr_provider,
-            asr_model=args.asr_model,
-        )
+        return toolkit.get_text(args.url)
     if args.command == "comments":
         return toolkit.get_comments(args.url, sort_by=args.sort_by, limit=args.limit)
     if args.command == "download":
@@ -79,11 +65,6 @@ def run_command(args: argparse.Namespace, toolkit: SocialMediaToolkit) -> dict[s
             comment_limit=args.comment_limit,
             output_dir=args.output_dir,
             media=args.media,
-            prefer_getnote=not args.no_getnote,
-            getnote_wait_sec=args.getnote_wait,
-            getnote_interval_sec=args.getnote_interval,
-            asr_provider=args.asr_provider,
-            asr_model=args.asr_model,
         )
     if args.command == "doctor":
         return toolkit.doctor()

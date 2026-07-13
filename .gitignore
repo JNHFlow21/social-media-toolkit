@@ -51,7 +51,6 @@ temp/
 # Local
 .env
 .env.*
-!.env.example
 output/
 config/
 tmp/

@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from social_post_extractor_mcp.social_extractor import HEADERS, SocialPost
+from .platforms.core import HEADERS, SocialPost
 
 
 ALLOWED_MEDIA = {"video", "cover", "images", "audio"}
@@ -85,7 +85,10 @@ class MediaDownloader:
             warnings.append("A cover was requested but the platform returned no cover URL")
 
         if "images" in requested:
-            seen = {cover_url} if cover_url else set()
+            # Avoid downloading the cover twice only when cover was requested.
+            # For image-only downloads the first image may also be the cover and
+            # must still be preserved.
+            seen = {cover_url} if cover_url and "cover" in requested else set()
             image_index = 0
             for image_url in post.image_urls or []:
                 if not image_url or image_url in seen:
