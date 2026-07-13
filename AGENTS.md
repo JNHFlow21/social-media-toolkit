@@ -1,334 +1,54 @@
-# Agent Install Protocol
+# Agent Development Protocol
 
-Use this file when a user gives you this repository link and asks you to install `social-post-extractor-mcp`.
+This repository is a public, reusable product. It must not depend on the Brain vault or any private user workspace.
 
-Your job is to configure the MCP end to end. Do not ask the user to copy a long prompt. Guide them through only the inputs that require human action, especially API Key creation and browser login.
+## Product boundary
 
-## Outcome
+- Core package: `social_media_toolkit`.
+- Backward-compatible MCP implementation: `social_post_extractor_mcp`.
+- Public read paths must not require browser automation, CDP, Playwright, or a logged-in session.
+- Account-private analytics remain optional and isolated.
+- Publishing/upload automation belongs in a separate future package because it has authenticated side effects.
 
-The user should be able to call one MCP server, usually named `douyin`, that supports Douyin, Xiaohongshu, and Bilibili extraction.
+## Invariants
 
-Expected tools:
+1. Text precedence is GetNote `web_page.content` → native platform subtitle → configured cloud ASR.
+2. Non-empty GetNote content wins even when an asynchronous task still contains a stale error message.
+3. `inspect` and `text` do not download persistent media. Downloads require an explicit output directory.
+4. Every normalized result preserves provenance, warnings, and platform limitations.
+5. Keep existing MCP tool names working when adding the public API.
+6. Never claim a public comment sample is a global platform ranking.
 
-- `parse_social_post_info`
-- `social_extract_transcript`
-- `social_capture_url`
-- `extract_social_post_script`
-- `social_analyze_owner_posts`
+## Secrets
 
-## Rules
+- Never commit, print, log, or paste secret values.
+- Do not ask users to send keys through chat.
+- Do not write real secrets to project `.env` or config files.
+- Public documentation may list secret names only and should recommend an OS/client secret manager.
+- On the maintainer machine, Agent Switch is the sole source of truth:
+  - inspect names with `agent-switch secret list`;
+  - run `agent-switch doctor` before MCP configuration changes;
+  - use `agent-switch reconcile` for generated native MCP configuration.
 
-- Never commit or print the user's real API Key.
-- Never put real API keys in README, tests, examples, Git commits, or public logs.
-- Prefer `config/social-post-extractor.env` inside the cloned MCP repo for secrets.
-- Preserve existing MCP client config entries when adding this server.
-- Use absolute paths in MCP stdio config.
-- Run tests before telling the user installation is complete.
-- After config, automatically test Douyin, Xiaohongshu, and Bilibili before saying OK.
+## Change discipline
 
-## Step 1: Check Prerequisites
+- Work from first principles and fix the root cause.
+- Keep platform-specific extraction behind adapters.
+- Keep the normalized `PostBundle` schema stable; version breaking schema changes.
+- No network call or file write at import time.
+- Avoid hidden downloads, browser launches, account actions, or paid ASR calls.
+- Unit tests must use synthetic fixtures and must not contain real cookies, tokens, or private content.
 
-Check the local machine:
+## Completion gate
 
-```bash
-git --version
-python3 --version
-uv --version
-```
-
-If `uv` is missing, install it using the user's normal package manager, or follow the official installer from Astral:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Then restart the shell or load the updated PATH.
-
-Also identify the MCP client the user wants to use, such as mcporter, Claude Desktop, Claude Code, Codex, or OpenClaw.
-
-## Step 2: Clone Or Update
-
-If the repo is not present:
+Run all of the following before claiming completion:
 
 ```bash
-git clone https://github.com/JNHFlow21/social-post-extractor-mcp.git
-cd social-post-extractor-mcp
 uv sync
-```
-
-If the repo already exists:
-
-```bash
-cd /ABSOLUTE/PATH/social-post-extractor-mcp
-git pull
-uv sync
-```
-
-Run:
-
-```bash
 uv run python -m unittest discover -s tests
-uv run python -m compileall social_post_extractor_mcp
+uv run python -m compileall social_media_toolkit social_post_extractor_mcp
+uv build
+git diff --check
 ```
 
-## Step 3: Guide API Key Setup
-
-Ask whether the user already has an Aliyun Bailian / DashScope API Key.
-
-If they do not, guide them:
-
-1. Open the direct API Key page: https://bailian.console.aliyun.com/cn-beijing?tab=model#/api-key
-2. If the user is confused, open the official API Key documentation: https://help.aliyun.com/zh/model-studio/get-api-key
-3. Log in to Aliyun.
-4. If the page is not already in Beijing, select `华北2（北京）` in the top-right region selector.
-5. Select the default business space.
-6. Click `创建 API Key`.
-7. Set permission to `全部`.
-8. Click `确定`.
-9. Ask the user to copy the `sk-...` key and send it to you in the private agent chat.
-10. Write it into `config/social-post-extractor.env` for them.
-
-Create the local config file inside the MCP repo. This is the preferred cross-platform path because both macOS and Windows MCP clients can read it as long as they start from the repo directory:
-
-```bash
-mkdir -p config
-cp .env.example config/social-post-extractor.env
-chmod 600 config/social-post-extractor.env
-```
-
-Windows PowerShell:
-
-```powershell
-New-Item -ItemType Directory -Force config
-Copy-Item .env.example config/social-post-extractor.env
-```
-
-Edit `config/social-post-extractor.env` with the user's real key:
-
-```bash
-export ASR_PROVIDER=bailian
-export ASR_MODEL=paraformer-v2
-export VISION_PROVIDER=bailian
-export VISION_MODEL=qwen3-vl-flash
-export CLEAN_PROVIDER=bailian
-export CLEAN_MODEL=qwen-flash
-export BAILIAN_API_KEY=sk-your-real-api-key
-export BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-export DASHSCOPE_ASR_URL=https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription
-```
-
-This file is ignored by Git through the `config/` ignore rule. The server also accepts plain `KEY=value` lines, so Windows users do not need shell-style environment setup.
-
-Supported config files, in precedence order:
-
-1. `config/social-post-extractor.env`
-2. `.env`
-3. `~/.mcporter/secrets/social-post-extractor.env`
-4. Windows `%APPDATA%\social-post-extractor-mcp\config.env`
-
-## Step 4: Configure MCP Client
-
-Use this macOS / Linux stdio server config. Replace the path with the actual repo path:
-
-```json
-{
-  "mcpServers": {
-    "douyin": {
-      "command": "/bin/zsh",
-      "args": [
-        "-lc",
-        "cd '/ABSOLUTE/PATH/social-post-extractor-mcp' && exec '.venv/bin/python' -m social_post_extractor_mcp"
-      ]
-    }
-  }
-}
-```
-
-Use this Windows PowerShell stdio server config:
-
-```json
-{
-  "mcpServers": {
-    "douyin": {
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "Set-Location 'C:\\ABSOLUTE\\PATH\\social-post-extractor-mcp'; & '.\\.venv\\Scripts\\python.exe' -m social_post_extractor_mcp"
-      ]
-    }
-  }
-}
-```
-
-Notes:
-
-- The server name `douyin` is kept for backward compatibility.
-- The server supports Douyin, Xiaohongshu, and Bilibili even if the MCP server name is `douyin`.
-- Do not put API keys in this JSON.
-
-For mcporter:
-
-```bash
-mcporter config list
-```
-
-Find the active config file, then merge the server entry into `mcpServers` without deleting existing servers.
-
-For Claude Desktop, Claude Code, Codex, OpenClaw, or another stdio MCP client, use the same `command` and `args` structure in that client's MCP config file.
-
-Restart the MCP client after editing config.
-
-## Step 5: Required Three-Platform Smoke Test
-
-After MCP config is complete and the MCP client has been restarted, test all three platforms before telling the user setup is done.
-
-Do not only test the Python unit tests. The goal is to confirm the MCP server can run from the user's client and handle real platform links.
-
-Use these default test links:
-
-```text
-DOUYIN_TEST_LINK=https://v.douyin.com/72RGMuz7Xpo/
-XIAOHONGSHU_VIDEO_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share
-XIAOHONGSHU_IMAGE_TEST_LINK=https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
-BILIBILI_TEST_LINK=https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842
-```
-
-First test metadata parsing:
-
-```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
-```
-
-Required smoke tests:
-
-```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
-```
-
-If the default Xiaohongshu link fails because the platform page expires or blocks access, ask the user for a fresh Xiaohongshu link. Do not claim full three-platform verification until Douyin, Xiaohongshu, and Bilibili all pass.
-
-After metadata parsing passes, test one real transcript/capture path. Prefer the Xiaohongshu video link because it verifies both Xiaohongshu parsing and video ASR:
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share", output_dir: "/tmp/social-post-extract")'
-```
-
-For Xiaohongshu video or image notes, use full capture:
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share", output_dir: "/tmp/social-post-extract")'
-```
-
-For full capture:
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "USER_LINK", output_dir: "/tmp/social-post-extract")'
-```
-
-Only say the MCP is installed successfully when:
-
-- Python unit tests pass.
-- Python compile check passes.
-- MCP client can call the server.
-- Douyin metadata test passes.
-- Xiaohongshu metadata test passes.
-- Bilibili metadata test passes.
-- At least one transcript or full capture test succeeds and returns `script_path` / `info_path`.
-
-## Step 6: Teach The User How To Use It
-
-After all required tests pass, first say `OK，MCP 已安装并通过三平台测试。` Then teach the user that they can use natural language. They do not need to memorize tool names.
-
-Recommended user prompts and agent actions:
-
-- User says: `帮我转写这个抖音视频：LINK`
-  - Call `social_capture_url` if they want files, or `social_extract_transcript` if they only want transcript.
-- User says: `帮我转写这个小红书视频笔记：LINK`
-  - Call `social_capture_url`.
-- User says: `帮我提取这个小红书图文笔记的正文、图片内容和数据：LINK`
-  - Call `social_capture_url`.
-- User says: `帮我转写这个 B 站视频：LINK`
-  - Call `social_capture_url`.
-- User says: `帮我看一下这个链接的作者、标题和数据，不用转写：LINK`
-  - Call `parse_social_post_info`.
-
-Always tell the user where the output files are:
-
-- `script_path` for the Markdown script.
-- `info_path` for structured JSON.
-
-## Step 7: Optional Owner Analytics
-
-Only do this if the user wants their own account review.
-
-Check:
-
-- The browser is logged in to the relevant creator center.
-- The browser-backed CLI environment is installed and working.
-- The user understands this mode reads their own account data from the logged-in browser.
-
-Example calls:
-
-```bash
-mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "profile")'
-mcporter call 'douyin.social_analyze_owner_posts(platform: "douyin", report_type: "recent_posts", limit: 5)'
-mcporter call 'douyin.social_analyze_owner_posts(platform: "xiaohongshu", report_type: "recent_posts", limit: 5)'
-mcporter call 'douyin.social_analyze_owner_posts(platform: "bilibili", report_type: "recent_posts", limit: 5)'
-```
-
-## Final Reply To User
-
-When setup is complete, tell the user:
-
-- Which MCP client was configured.
-- The server name they should call.
-- Where outputs are written.
-- Which smoke tests passed for Douyin, Xiaohongshu, and Bilibili.
-- Whether transcript/full capture produced `script_path` and `info_path`.
-- Which API key file is being used, usually `config/social-post-extractor.env`, without revealing the key.
-- How to use the main tools:
-  - `parse_social_post_info` for metadata only
-  - `social_extract_transcript` for transcript
-  - `social_capture_url` for full capture
-  - `social_analyze_owner_posts` for own-account review
-
-If setup fails, report:
-
-- The exact failing step.
-- The command that failed.
-- The relevant error message.
-- The next concrete fix.
-
-Use this final reply shape:
-
-```text
-OK，MCP 已安装并通过三平台测试。
-
-配置结果：
-- MCP 客户端：...
-- Server 名称：douyin
-- API Key 文件：config/social-post-extractor.env，未展示真实 key
-
-测试结果：
-- 抖音 metadata：通过，作品 ID：...
-- 小红书 metadata：通过，作品 ID：...
-- Bilibili metadata：通过，作品 ID：...
-- 转写/完整采集：通过
-
-输出文件：
-- script.md：...
-- info.json：...
-
-以后你可以这样用：
-- 帮我转写这个抖音视频：链接
-- 帮我转写这个小红书视频笔记：链接
-- 帮我提取这个小红书图文笔记的正文、图片内容和数据：链接
-- 帮我转写这个 B 站视频：链接
-- 帮我看一下这个链接的作者、标题和数据，不用转写：链接
-```
+For a release, also run authorized, read-only smoke tests for Douyin, Xiaohongshu, Bilibili, and YouTube. Report blocked platforms honestly; never weaken tests or fabricate success.

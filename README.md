@@ -1,75 +1,45 @@
-# Social Post Extractor MCP
+# Social Media Toolkit
 
-统一提取抖音、小红书、Bilibili 内容的 MCP Server。它可以解析作者信息、作品信息、公开视频指标、字幕/转写稿、小红书图文图片内容，并在需要时通过浏览器登录态拉取自己账号的复盘数据。
+一个可复用的社交媒体内容工具包，同时提供 **Python SDK、CLI 和 MCP Server**。
 
-默认产物：
+它把不同平台的数据统一为 `PostBundle`，支持获取：
 
-- `script.md`：给人和 AI 继续阅读、整理、入库的内容稿
-- `info.json`：给程序和 AI 使用的结构化数据，包括作者、指标、媒体、transcript、图片分析、模型信息和状态
+- 作品与作者元数据
+- 正文、平台字幕与云端 ASR 转写
+- 视频、封面和图片文件
+- 公开互动指标
+- 已支持平台的公开评论
+- 每一步的数据来源与降级路径（provenance）
 
-## 怎么安装
+> 当前版本：`0.2.0` Public Alpha。公开读取路径不依赖浏览器、CDP 或 Playwright；账号私有数据仍保留为独立的旧版可选能力。
 
-把这个 GitHub 链接发给你的 AI Agent：
+## 支持情况
 
-```text
-https://github.com/JNHFlow21/social-post-extractor-mcp
-```
+| 平台 | 元数据 | 文字 | 媒体下载 | 公开评论 |
+|---|---:|---:|---:|---:|
+| 抖音 | ✅ | GetNote → 云端 ASR | 视频 / 封面 | ✅ 顶层公开评论，最多 10 条 |
+| 小红书 | ✅ | GetNote；旧版流程支持图文视觉提取 | 视频 / 封面 / 图片 | — |
+| Bilibili | ✅ | GetNote → 原生字幕 → 云端 ASR | 视频 / 封面 | — |
+| YouTube | ✅ | GetNote → 人工字幕 → 自动字幕 → 云端 ASR | 视频 / 封面 | — |
 
-然后对它说：
+评论排序只针对公开接口实际返回的样本，不宣称是平台全量评论的全局排名。
 
-```text
-请打开这个仓库，先读 README.md 和 AGENTS.md，然后帮我安装并配置这个 MCP。不要让我复制长提示词，请一步一步带我完成 API Key、MCP 客户端和 smoke test。
-```
+## 设计原则
 
-安装 agent 应该优先执行 [AGENTS.md](AGENTS.md) 里的流程。
+1. **文字有确定优先级**：GetNote `web_page.content` → 平台原生字幕 → 云端 ASR。
+2. **副作用必须显式**：`inspect` 和 `text` 不写媒体文件；只有 `download` 或带 `output_dir` 的 `capture` 会下载。
+3. **统一模型，不抹平差异**：公共字段进入 `PostBundle`，平台独有字段保留在来源和 metadata 中。
+4. **结果可追溯**：返回 provider、route、warning、文件 SHA-256，不伪装降级结果。
+5. **公开读取与账号写操作分离**：自动发布以后应作为独立模块，不能混进只读核心。
 
-## 能做什么
+架构与能力边界见：
 
-- 抖音：公开视频信息、作者信息、指标、视频 transcript
-- 小红书：视频笔记 transcript、图文笔记正文和图片视觉分析
-- Bilibili：公开视频信息、作者信息、指标、视频 transcript
-- 自己账号复盘：通过本机浏览器登录态拉取作品列表、账号概览、作品详情等数据
+- [docs/architecture.md](docs/architecture.md)
+- [docs/capabilities.md](docs/capabilities.md)
 
-设计原则：
+## 安装
 
-- 外部视频优先使用平台字幕；没有字幕时才走云端 ASR。
-- 小红书图文笔记走云端视觉模型分析图片。
-- 自己账号复盘默认只抓数据，不做 ASR。
-- 不把视频作为长期文件下载到本地。
-- API Key 默认放在 MCP 仓库内的本机配置文件，不写进 Git。
-
-## 前置条件
-
-- `git`
-- Python `3.10+`
-- `uv`
-- 一个支持 stdio MCP 的客户端，例如 mcporter、Claude Desktop、Claude Code、Codex 或 OpenClaw
-- 阿里云百炼 / DashScope API Key，用于 ASR、视觉模型和清理模型
-
-获取 API Key：
-
-- API Key 页面直达：https://bailian.console.aliyun.com/cn-beijing?tab=model#/api-key
-- 官方教程：https://help.aliyun.com/zh/model-studio/get-api-key
-- Base URL：`https://dashscope.aliyuncs.com/compatible-mode/v1`
-- ASR URL：`https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription`
-
-找 API Key 的路径：
-
-1. 打开 API Key 页面直达链接。
-2. 登录阿里云账号。
-3. 如果没有自动进入北京地域，页面右上角选择 `华北2（北京）`。
-4. 归属业务空间选择 `默认业务空间`。
-5. 点击 `创建 API Key`。
-6. 权限选择 `全部`。
-7. 点击 `确定`。
-8. 创建后复制 `sk-...` 开头的 API Key，发给正在帮你安装的 AI Agent，让它自动填入 `config/social-post-extractor.env`。
-
-如果要做“自己账号复盘”，还需要：
-
-- 本机浏览器已经登录对应平台的创作者后台
-- 可用的 browser-backed CLI 环境，例如 `opencli` / `bb-browser`
-
-## 快速安装
+要求：Python 3.10+、`uv`。媒体合并建议安装 `ffmpeg`。
 
 ```bash
 git clone https://github.com/JNHFlow21/social-post-extractor-mcp.git
@@ -77,319 +47,187 @@ cd social-post-extractor-mcp
 uv sync
 ```
 
-如果已经克隆过：
+文字获取优先使用 GetNote。没有安装时，工具会返回明确提示：
 
 ```bash
-cd social-post-extractor-mcp
-git pull
+npm install -g @getnote/cli
+getnote auth login
+```
+
+检查本机能力：
+
+```bash
+uv run socialkit doctor
+```
+
+`doctor` 只显示依赖状态和所需 secret **名称**，不会返回 secret 值。
+
+## CLI
+
+### 只看统一元数据
+
+```bash
+uv run socialkit inspect "SHARE_URL"
+```
+
+### 获取文字
+
+```bash
+uv run socialkit text "SHARE_URL"
+```
+
+跳过 GetNote，直接测试平台字幕 / ASR 降级：
+
+```bash
+uv run socialkit text "SHARE_URL" --no-getnote --asr-provider bailian
+```
+
+### 获取抖音公开评论
+
+```bash
+uv run socialkit comments "DOUYIN_URL" --sort likes --limit 10
+uv run socialkit comments "DOUYIN_URL" --sort recent --limit 10
+```
+
+### 显式下载媒体
+
+```bash
+uv run socialkit download "SHARE_URL" \
+  --include video,cover,images \
+  --output "/absolute/path/to/output"
+```
+
+返回清单包含本地绝对路径、文件大小、MIME 和 SHA-256。
+
+### 一次生成完整数据包
+
+```bash
+uv run socialkit capture "DOUYIN_URL" \
+  --comments \
+  --output "/absolute/path/to/output"
+```
+
+不传 `--output` 时只返回数据，不下载媒体。
+
+## Python SDK
+
+```python
+from social_media_toolkit import SocialMediaToolkit
+
+toolkit = SocialMediaToolkit()
+
+metadata = toolkit.inspect("SHARE_URL")
+text = toolkit.get_text("SHARE_URL")
+comments = toolkit.get_comments("DOUYIN_URL", sort_by="likes", limit=10)
+
+bundle = toolkit.capture(
+    "SHARE_URL",
+    include_text=True,
+    include_comments=False,
+)
+```
+
+## MCP Server
+
+启动：
+
+```bash
+uv run social-media-toolkit-mcp
+```
+
+任意支持 stdio MCP 的客户端都可以使用绝对路径配置：
+
+```json
+{
+  "mcpServers": {
+    "social-media-toolkit": {
+      "command": "/ABSOLUTE/PATH/social-post-extractor-mcp/.venv/bin/python",
+      "args": ["-m", "social_post_extractor_mcp"]
+    }
+  }
+}
+```
+
+推荐的新工具：
+
+| MCP Tool | 作用 |
+|---|---|
+| `social_inspect` | 返回统一 `PostBundle`，不下载 |
+| `social_get_text` | GetNote → 原生字幕 → 云端 ASR |
+| `social_download` | 显式下载媒体并返回校验清单 |
+| `social_get_comments` | 获取当前已支持平台的公开评论 |
+| `social_capture_bundle` | 按需合并元数据、文字、评论和媒体 |
+| `social_doctor` | 检查依赖和 secret 名称 |
+
+为避免破坏现有用户，旧工具仍然保留：
+
+- `parse_social_post_info`
+- `get_douyin_comments`
+- `social_extract_transcript`
+- `social_capture_url`
+- `extract_social_post_script`
+- `social_analyze_owner_posts`
+- `parse_douyin_video_info`
+- `get_douyin_download_link`
+- `extract_douyin_text`
+
+## PostBundle
+
+所有平台统一输出以下顶层结构：
+
+```json
+{
+  "schema_version": "1.0",
+  "source": {},
+  "post": {},
+  "author": {},
+  "media": {
+    "videos": [],
+    "covers": [],
+    "images": [],
+    "audio": []
+  },
+  "metrics": {},
+  "content": {},
+  "comments": {},
+  "provenance": {}
+}
+```
+
+## 云端 ASR 与 secret
+
+GetNote 或平台字幕不可用时，视频才会进入云端 ASR。当前兼容的 provider 包括 Bailian / DashScope、Doubao / Ark、SiliconFlow 和 Volcengine Speech。
+
+常用 secret 名称：
+
+- `BAILIAN_API_KEY` 或 `DASHSCOPE_API_KEY`
+- `DOUBAO_API_KEY` 或 `ARK_API_KEY`
+- `SILICONFLOW_API_KEY`
+- `VOLCENGINE_SPEECH_APP_ID`
+- `VOLCENGINE_SPEECH_ACCESS_TOKEN`
+
+**不要把真实 secret 写进仓库、README、MCP JSON、issue 或日志。** 使用操作系统密钥管理器、MCP 客户端 secret store 或进程级安全注入。本仓库的 `.env.example` 只是名称参考，不应写入真实值。
+
+## 开发与验证
+
+```bash
 uv sync
-```
-
-## 配置 API Key
-
-不要配置系统环境变量。推荐把明文 key 放在 MCP 仓库里的本机配置文件：
-
-```bash
-mkdir -p config
-cp .env.example config/social-post-extractor.env
-chmod 600 config/social-post-extractor.env
-```
-
-Windows PowerShell：
-
-```powershell
-New-Item -ItemType Directory -Force config
-Copy-Item .env.example config/social-post-extractor.env
-```
-
-然后把 `config/social-post-extractor.env` 里的占位值改成真实值：
-
-```bash
-export ASR_PROVIDER=bailian
-export ASR_MODEL=paraformer-v2
-export VISION_PROVIDER=bailian
-export VISION_MODEL=qwen3-vl-flash
-export CLEAN_PROVIDER=bailian
-export CLEAN_MODEL=qwen-flash
-export BAILIAN_API_KEY=sk-your-real-api-key
-export BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-export DASHSCOPE_ASR_URL=https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription
-```
-
-这个文件在 `.gitignore` 里，不会被提交。也兼容不带 `export` 的 `KEY=value` 写法。
-
-服务会按顺序读取：
-
-1. `config/social-post-extractor.env`
-2. `.env`
-3. `~/.mcporter/secrets/social-post-extractor.env`
-4. Windows `%APPDATA%\social-post-extractor-mcp\config.env`
-
-## MCP 客户端配置
-
-server 名可以继续叫 `douyin`，这是为了兼容旧调用；它实际支持抖音、小红书和 Bilibili。
-
-macOS / Linux stdio 配置示例，注意把路径替换成你本机真实路径：
-
-```json
-{
-  "mcpServers": {
-    "douyin": {
-      "command": "/bin/zsh",
-      "args": [
-        "-lc",
-        "cd '/ABSOLUTE/PATH/social-post-extractor-mcp' && exec '.venv/bin/python' -m social_post_extractor_mcp"
-      ]
-    }
-  }
-}
-```
-
-Windows PowerShell stdio 配置示例：
-
-```json
-{
-  "mcpServers": {
-    "douyin": {
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "Set-Location 'C:\\ABSOLUTE\\PATH\\social-post-extractor-mcp'; & '.\\.venv\\Scripts\\python.exe' -m social_post_extractor_mcp"
-      ]
-    }
-  }
-}
-```
-
-不要把真实 API Key 直接写进 MCP JSON；本服务会自动读取 `config/social-post-extractor.env`。
-
-## 验证
-
-在仓库目录执行：
-
-```bash
 uv run python -m unittest discover -s tests
-uv run python -m compileall social_post_extractor_mcp
+uv run python -m compileall social_media_toolkit social_post_extractor_mcp
+uv build
 ```
 
-如果使用 mcporter：
+发布前还应使用自己有权访问的四个平台链接做只读 smoke test。不要把登录 Cookie、私有响应或用户内容提交为 fixture。
 
-```bash
-mcporter config list
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
-```
+## 边界
 
-默认测试链接：
+- 平台接口可能变化，返回中会保留 warning 和 provenance。
+- 无登录公开接口拿不到的内容，本项目不会伪装成“已完整获取”。
+- 下载和使用内容时，使用者必须遵守平台条款、版权和当地法律。
+- 自动上传 / 自动发布是有账号副作用的另一类产品，后续应独立为 publisher package。
 
-```text
-抖音视频：
-https://v.douyin.com/72RGMuz7Xpo/
-
-小红书视频：
-https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share
-
-小红书图文：
-https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share
-
-Bilibili 视频：
-https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842
-```
-
-安装 agent 配置完成后，必须自动测试三个平台：
-
-```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "https://v.douyin.com/72RGMuz7Xpo/")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.xiaohongshu.com/discovery/item/69ec4330000000001a02de7d?source=webshare&xhsshare=pc_web&xsec_token=ABIXZbvap57FaFYWymY6oBwwRkz1Chn1orsWGhjJntXYY=&xsec_source=pc_share")'
-mcporter call 'douyin.parse_social_post_info(share_link: "https://www.bilibili.com/video/BV19nwvzkEz3/?share_source=copy_web&vd_source=3e5fb861a7d0d1af1134f023ac01f842")'
-```
-
-三平台 metadata 测试都通过后，再测试至少一次 transcript 或完整采集。推荐优先测试小红书视频，因为它同时验证小红书解析和视频转写链路：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "https://www.xiaohongshu.com/discovery/item/69ee20ef000000003700f942?source=webshare&xhsshare=pc_web&xsec_token=ABSu4AV7InNpMmutizzqOXvEbSYOl4SuMzfQx6rnUVq8Y=&xsec_source=pc_share", output_dir: "/tmp/social-post-extract")'
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "抖音视频链接", output_dir: "/tmp/social-post-extract")'
-```
-
-如果默认小红书链接失效，再让用户提供一个新的小红书链接；没有真实可用的小红书链接时，只能说“部分验证通过”，不能说“三平台全部通过”。
-
-真实提取 transcript 时建议给 `output_dir`：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "你的抖音/小红书/Bilibili链接", output_dir: "/tmp/social-post-extract")'
-```
-
-安装完成后，AI Agent 应该先给出类似这样的回执：
-
-```text
-OK，MCP 已安装并通过测试。
-
-测试结果：
-- 抖音 metadata：通过
-- 小红书 metadata：通过
-- Bilibili metadata：通过
-- 转写/完整采集：通过
-
-输出文件：
-- script.md：实际路径
-- info.json：实际路径
-
-以后你可以直接说：
-- 帮我转写这个抖音视频：链接
-- 帮我转写这个小红书视频笔记：链接
-- 帮我提取这个小红书图文笔记的正文、图片内容和数据：链接
-- 帮我转写这个 B 站视频：链接
-- 帮我看一下这个链接的作者、标题和数据，不用转写：链接
-```
-
-## 使用教程
-
-配置完成后，学员不用记 MCP 工具名，直接把链接发给 AI Agent 即可。
-
-### 转写抖音视频
-
-直接说：
-
-```text
-帮我转写这个抖音视频，并保存成 script.md 和 info.json：
-https://v.douyin.com/xxxx/
-```
-
-Agent 应该调用：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "抖音链接", output_dir: "/tmp/social-post-extract")'
-```
-
-如果只要文字稿，不需要完整信息：
-
-```text
-帮我只提取这个抖音视频的转写稿：
-https://v.douyin.com/xxxx/
-```
-
-Agent 应该调用：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_extract_transcript(share_link: "抖音链接", output_dir: "/tmp/social-post-extract")'
-```
-
-### 转写小红书视频
-
-直接说：
-
-```text
-帮我转写这个小红书视频笔记：
-小红书分享链接
-```
-
-Agent 应该调用：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "小红书链接", output_dir: "/tmp/social-post-extract")'
-```
-
-### 提取小红书图文笔记
-
-直接说：
-
-```text
-帮我提取这个小红书图文笔记的正文、图片内容和数据：
-小红书分享链接
-```
-
-Agent 应该调用：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "小红书链接", output_dir: "/tmp/social-post-extract")'
-```
-
-图文笔记会保存正文、图片 URL，并用视觉模型分析图片内容。
-
-### 转写 Bilibili 视频
-
-直接说：
-
-```text
-帮我转写这个 B 站视频，并保存结构化信息：
-https://www.bilibili.com/video/BVxxxx/
-```
-
-Agent 应该调用：
-
-```bash
-mcporter call --timeout 86400000 'douyin.social_capture_url(share_link: "B站链接", output_dir: "/tmp/social-post-extract")'
-```
-
-### 只看作者和数据
-
-如果只想看标题、作者、点赞、评论、收藏等信息，不想跑转写：
-
-```text
-帮我看一下这个链接的作者、标题和数据，不用转写：
-平台链接
-```
-
-Agent 应该调用：
-
-```bash
-mcporter call 'douyin.parse_social_post_info(share_link: "平台链接")'
-```
-
-### 输出在哪里
-
-默认建议输出到：
-
-```text
-/tmp/social-post-extract
-```
-
-每次成功提取后，结果里会返回实际路径：
-
-- `script_path`：整理后的 Markdown 文稿
-- `info_path`：结构化 JSON 数据
-
-## 工具列表
-
-- `parse_social_post_info`：只解析作者、作品、指标和媒体信息，不做 ASR
-- `social_extract_transcript`：提取视频 transcript，优先平台字幕，没有字幕时走云端 ASR
-- `social_capture_url`：统一采集链接，输出 `script.md` 和 `info.json`
-- `extract_social_post_script`：兼容旧入口，功能接近 `social_capture_url`
-- `social_analyze_owner_posts`：拉取自己账号复盘数据，需要浏览器登录态
-- `parse_douyin_video_info`、`get_douyin_download_link`、`extract_douyin_text`：旧版兼容工具
-
-## 常见问题
-
-如果提示 API Key 不存在：
-
-- 检查 `config/social-post-extractor.env` 是否存在
-- 检查 `BAILIAN_API_KEY` 或 `DASHSCOPE_API_KEY` 是否填了真实值
-- 重启 MCP 客户端
-
-如果 transcript 失败：
-
-- 先用 `parse_social_post_info` 确认链接能解析
-- 确认视频 URL 可访问
-- 确认百炼 / DashScope 服务已开通并有额度
-- 把完整错误信息发给安装 agent 排查
-
-如果自己账号复盘失败：
-
-- 先确认浏览器已经登录对应创作者后台
-- 确认 browser-backed CLI 环境可用
-- 重新运行 `social_analyze_owner_posts`
-
-## 安全规则
-
-- 不要提交真实 API Key。
-- 不要把真实 API Key 贴到公开聊天或 issue。
-- 不要长期保存别人的视频文件。
-- 处理别人的公开视频时可以走云端 ASR；处理自己账号复盘时默认只抓数据。
-- 结果尽量保留结构化字段，不要只保留自然语言摘要。
+版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

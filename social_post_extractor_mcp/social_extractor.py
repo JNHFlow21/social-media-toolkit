@@ -38,6 +38,9 @@ DOUYIN_MOBILE_HEADERS = {
     )
 }
 
+DOUYIN_PUBLIC_COMMENT_ENDPOINT = "https://www.iesdouyin.com/web/api/v2/comment/list/"
+DOUYIN_PUBLIC_COMMENT_LIMIT = 10
+
 DEFAULT_ASR_PROVIDER = "bailian"
 DEFAULT_ASR_MODEL = "paraformer-v2"
 DEFAULT_VISION_PROVIDER = "bailian"
@@ -452,6 +455,110 @@ class DouyinPlatformAdapter(PlatformAdapter):
         )
 
 
+def fetch_douyin_public_comments(
+    video_id: str,
+    *,
+    referer: Optional[str] = None,
+    limit: int = DOUYIN_PUBLIC_COMMENT_LIMIT,
+    sort_by: str = "likes",
+) -> dict[str, Any]:
+    """Fetch the public top-level comments exposed by Douyin's mobile share API.
+
+    This path is HTTP-only: it does not use a browser, CDP, Playwright, or a
+    logged-in account. The public endpoint currently exposes at most ten
+    top-level comments and reply counts, but not the reply bodies.
+    """
+
+    if not video_id or not str(video_id).isdigit():
+        raise ValueError("无效的抖音视频 ID")
+    if not 1 <= limit <= DOUYIN_PUBLIC_COMMENT_LIMIT:
+        raise ValueError(f"limit 必须在 1 到 {DOUYIN_PUBLIC_COMMENT_LIMIT} 之间")
+
+    normalized_sort = _normalize_douyin_comment_sort(sort_by)
+    headers = {
+        **DOUYIN_MOBILE_HEADERS,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": referer or f"https://www.iesdouyin.com/share/video/{video_id}",
+    }
+    response = requests.get(
+        DOUYIN_PUBLIC_COMMENT_ENDPOINT,
+        headers=headers,
+        params={"aweme_id": str(video_id), "cursor": 0, "count": DOUYIN_PUBLIC_COMMENT_LIMIT},
+        timeout=30,
+    )
+    response.raise_for_status()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError("抖音公开评论接口没有返回 JSON") from exc
+
+    raw_comments = payload.get("comments") if isinstance(payload, dict) else None
+    if not isinstance(raw_comments, list):
+        raise RuntimeError("抖音公开评论接口没有返回评论列表")
+
+    comments = [
+        normalize_douyin_public_comment(comment)
+        for comment in raw_comments
+        if isinstance(comment, dict) and comment.get("cid")
+    ]
+    if normalized_sort == "likes":
+        comments.sort(key=lambda item: (item["like_count"], item["create_time"]), reverse=True)
+    else:
+        comments.sort(key=lambda item: (item["create_time"], item["like_count"]), reverse=True)
+
+    return {
+        "video_id": str(video_id),
+        "sort_by": normalized_sort,
+        "ranking_scope": "retrieved_public_top_level_comments",
+        "requested_limit": limit,
+        "fetched_top_level_count": len(comments),
+        "returned_count": min(limit, len(comments)),
+        "reported_reply_count": sum(item["reply_count"] for item in comments),
+        "reply_bodies_included": False,
+        "comments": comments[:limit],
+        "source": "douyin_public_mobile_share_api",
+        "source_limit": DOUYIN_PUBLIC_COMMENT_LIMIT,
+    }
+
+
+def normalize_douyin_public_comment(comment: dict[str, Any]) -> dict[str, Any]:
+    user = comment.get("user") or {}
+    create_time = _coerce_int(comment.get("createTime") or comment.get("create_time"))
+    like_count = _coerce_int(comment.get("digg_count"))
+    reply_count = _coerce_int(comment.get("reply_comment_total"))
+    avatar_url = _first_media_url(
+        *((user.get("avatar_thumb") or {}).get("url_list") or []),
+        *((user.get("avatar_medium") or {}).get("url_list") or []),
+        *((user.get("avatar_larger") or {}).get("url_list") or []),
+    )
+    return {
+        "comment_id": str(comment.get("cid") or ""),
+        "video_id": str(comment.get("aweme_id") or ""),
+        "text": str(comment.get("text") or ""),
+        "create_time": create_time,
+        "create_time_iso": _unix_time_iso(create_time),
+        "like_count": like_count,
+        "reply_count": reply_count,
+        "ip_label": comment.get("ip_label"),
+        "author": {
+            "name": user.get("nickname"),
+            "handle": user.get("unique_id") or user.get("short_id"),
+            "short_id": user.get("short_id"),
+            "sec_uid": user.get("sec_uid"),
+            "avatar_url": avatar_url,
+        },
+    }
+
+
+def _normalize_douyin_comment_sort(sort_by: str) -> str:
+    value = (sort_by or "likes").strip().lower()
+    if value in {"likes", "like", "popular", "top"}:
+        return "likes"
+    if value in {"recent", "latest", "newest"}:
+        return "recent"
+    raise ValueError("sort_by 仅支持 likes 或 recent")
+
+
 class BilibiliPlatformAdapter(PlatformAdapter):
     def can_handle(self, share_text: str) -> bool:
         lower = share_text.lower()
@@ -647,6 +754,44 @@ class SocialExtractorService:
     def parse_social_post(self, share_text: str) -> SocialPost:
         adapter = self._resolve_platform_adapter(share_text)
         return adapter.fetch_post(share_text)
+
+    def get_douyin_comments(
+        self,
+        share_text: str,
+        *,
+        limit: int = DOUYIN_PUBLIC_COMMENT_LIMIT,
+        sort_by: str = "likes",
+    ) -> dict[str, Any]:
+        post = self.parse_social_post(share_text)
+        return self.get_douyin_comments_for_post(post, limit=limit, sort_by=sort_by)
+
+    def get_douyin_comments_for_post(
+        self,
+        post: SocialPost,
+        *,
+        limit: int = DOUYIN_PUBLIC_COMMENT_LIMIT,
+        sort_by: str = "likes",
+    ) -> dict[str, Any]:
+        """Fetch comments for an already parsed post without resolving it twice."""
+        if post.platform != "douyin":
+            raise ValueError("评论工具目前仅支持抖音链接")
+
+        result = fetch_douyin_public_comments(
+            post.post_id,
+            referer=post.page_url or post.resolved_url,
+            limit=limit,
+            sort_by=sort_by,
+        )
+        result.update(
+            {
+                "status": "success",
+                "title": post.title,
+                "author_name": post.author_name,
+                "reported_comment_total": _coerce_int(post.public_metrics.get("comments")),
+                "page_url": post.page_url,
+            }
+        )
+        return result
 
     def extract_social_post(
         self,
@@ -2343,6 +2488,19 @@ def _first_existing(data: dict[str, Any], *keys: str) -> Any:
         if key in data:
             return data.get(key)
     return None
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _unix_time_iso(value: int) -> Optional[str]:
+    if value <= 0:
+        return None
+    return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _first_media_url(*values: Optional[str]) -> Optional[str]:
