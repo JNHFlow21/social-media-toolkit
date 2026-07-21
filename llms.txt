@@ -2,6 +2,13 @@
 
 Public SDK, CLI, and MCP server for Douyin, Xiaohongshu, Bilibili, and YouTube.
 
+Canonical install or update command:
+`npx -y github:JNHFlow21/social-media-toolkit`
+
+The NPX bootstrap installs `uv` from `astral.sh` only when missing, then uses
+an isolated `uv tool` environment. After installation, use `socialkit` and
+`social-media-toolkit-mcp` directly; cloning the repository is not required.
+
 Read first:
 - README.md
 - AGENTS.md

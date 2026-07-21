@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added a dependency-free Node.js bootstrap so the public toolkit can be
+  installed or updated with one NPX command from GitHub.
+- The bootstrap reuses `uv` when present, installs official `uv` from
+  `astral.sh` when absent, delegates to an isolated `uv tool` environment, and
+  verifies the installed `socialkit` command.
+- Simplified README CLI and MCP examples to use globally installed commands
+  instead of repository-specific `uv run` paths.
 - Documented and regression-tested the standalone public runtime: normal
   process environment variables work without Agent Switch, which remains an
   optional maintainer-only secret-manager fallback.

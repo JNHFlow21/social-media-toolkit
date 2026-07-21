@@ -6,6 +6,7 @@ This repository is a public, reusable product. It must not depend on the Brain v
 
 - Core package: `social_media_toolkit`.
 - Thin MCP transport: `social_post_extractor_mcp`.
+- Thin npm bootstrap: `package.json` plus `bin/social-media-toolkit.mjs`; it may install `uv` and must delegate the actual CLI/MCP installation to `uv tool`.
 - Public read paths must not require browser automation, CDP, Playwright, or a logged-in session.
 - Account-private analytics remain optional and isolated.
 - Publishing/upload automation belongs in a separate future package because it has authenticated side effects.
@@ -21,6 +22,7 @@ This repository is a public, reusable product. It must not depend on the Brain v
 7. Volcengine is the only ASR provider. Do not add local ASR or another cloud fallback.
 8. Never claim a public comment sample is a global platform ranking.
 9. A plain `text`, text-enabled `capture`, timed-text, or full-chain smoke-test request runs its configured text route automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
+10. The NPX path must be a real tested installer, not a documentation alias. It must not collect credentials, load project secrets, or duplicate Python runtime behavior in JavaScript.
 
 ## Secrets
 
@@ -53,6 +55,8 @@ uv sync
 uv run python -m unittest discover -s tests
 uv run python -m compileall social_media_toolkit social_post_extractor_mcp
 uv build
+npm test
+npm pack --dry-run
 git diff --check
 ```
 

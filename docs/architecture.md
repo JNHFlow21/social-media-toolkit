@@ -7,6 +7,8 @@ CLI, and MCP transport.
 
 ```mermaid
 flowchart LR
+    X["npx GitHub bootstrap"] --> I["uv tool isolated install"]
+    I --> O
     U["URL or share text"] --> S["SocialMediaToolkit"]
     S --> R["PlatformRouter"]
     R --> P["Public platform adapter"]
@@ -45,6 +47,13 @@ flowchart LR
 A thin stdio MCP transport. It owns no alternate extraction logic and creates
 exactly one `SocialMediaToolkit` instance.
 
+### npm bootstrap
+
+`bin/social-media-toolkit.mjs` is a dependency-free installation adapter. It
+uses an existing `uv` executable or installs official `uv` from `astral.sh`,
+then delegates the real package installation to an isolated `uv tool`
+environment. It contains no extraction, provider, MCP, or credential logic.
+
 ## Text contract
 
 1. Ask GetNote for original content.
@@ -75,6 +84,9 @@ backward compatible.
 
 ## Side effects
 
+- `npx` installer: may install official `uv`, create an isolated `uv tool`
+  environment, install command shims, and update the user's future shell
+  `PATH`; it never reads provider credentials.
 - `inspect`: public network reads only.
 - `get_text`: by default runs configured GetNote, then native subtitles, then possibly paid Volcengine ASR; timed mode instead writes explicitly requested transcript artifacts and never persists media.
 - `get_comments`: public network reads only.
