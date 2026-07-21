@@ -101,8 +101,11 @@ class FakeRouter:
             "comments": [{"comment_id": "1", "text": "好内容", "like_count": 9}],
             "reported_comment_total": 20,
             "ranking_scope": "retrieved_public_top_level_comments",
+            "status": "success",
             "sort_by": sort_by,
             "source": "douyin_public_mobile_share_api",
+            "requested_limit": limit,
+            "returned_count": 1,
             "reply_bodies_included": False,
         }
 
@@ -405,6 +408,7 @@ class TextPipelineTests(unittest.TestCase):
         result = toolkit.capture("https://example.com/post", include_comments=True)
         self.assertEqual(result["content"]["canonical_text"], "字幕")
         self.assertEqual(result["comments"]["items"][0]["comment_id"], "1")
+        self.assertEqual(result["comments"]["status"], "success")
         self.assertNotIn("downloads", result)
         self.assertEqual(router.parse_calls, 1)
 

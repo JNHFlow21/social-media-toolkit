@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from social_media_toolkit.platforms.core import (
     BilibiliPlatformAdapter,
+    DouyinPlatformAdapter,
     PlatformRouter,
     SocialPost,
     XHSStateParser,
@@ -37,6 +38,70 @@ class FakeResponse:
         return self.payload
 
 
+class FakeHtmlResponse:
+    def __init__(self, *, url, text):
+        self.url = url
+        self.text = text
+
+    def raise_for_status(self):
+        return None
+
+
+class DouyinAdapterTests(unittest.TestCase):
+    def test_uses_router_data_from_the_original_signed_share_response(self):
+        signed_url = "https://www.iesdouyin.com/share/video/123456/?share_sign=public"
+        router_data = {
+            "loaderData": {
+                "video_(id)/page": {
+                    "videoInfoRes": {
+                        "item_list": [{
+                            "desc": "公开作品",
+                            "create_time": 100,
+                            "aweme_type": 0,
+                            "author": {"nickname": "作者"},
+                            "statistics": {"digg_count": 8},
+                            "video": {
+                                "duration": 3000,
+                                "cover": {"url_list": ["https://cdn.example.com/cover.jpg"]},
+                                "play_addr": {"url_list": ["https://cdn.example.com/video.mp4"]},
+                            },
+                        }]
+                    }
+                }
+            }
+        }
+        html = f"<script>window._ROUTER_DATA = {json.dumps(router_data)}</script>"
+        response = FakeHtmlResponse(url=signed_url, text=html)
+        with patch("social_media_toolkit.platforms.core.requests.get", return_value=response) as request:
+            post = DouyinPlatformAdapter().fetch_post(signed_url)
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(post.post_id, "123456")
+        self.assertEqual(post.title, "公开作品")
+        self.assertEqual(post.cover_url, "https://cdn.example.com/cover.jpg")
+
+    def test_reports_an_unavailable_signed_share_instead_of_returning_empty_metadata(self):
+        signed_url = "https://www.iesdouyin.com/share/video/123456/?share_sign=public"
+        router_data = {
+            "loaderData": {
+                "video_(id)/page": {
+                    "videoInfoRes": {
+                        "status_code": 0,
+                        "item_list": [],
+                        "filter_list": [{
+                            "filter_reason": "status_self_see",
+                            "detail_msg": "作品权限或已被删除",
+                        }],
+                    }
+                }
+            }
+        }
+        html = f"<script>window._ROUTER_DATA = {json.dumps(router_data)}</script>"
+        response = FakeHtmlResponse(url=signed_url, text=html)
+        with patch("social_media_toolkit.platforms.core.requests.get", return_value=response):
+            with self.assertRaisesRegex(ValueError, "status_self_see"):
+                DouyinPlatformAdapter().fetch_post(signed_url)
+
+
 class DouyinCommentsTests(unittest.TestCase):
     def test_normalizes_public_comment_without_private_session(self):
         normalized = normalize_douyin_public_comment({
@@ -58,11 +123,46 @@ class DouyinCommentsTests(unittest.TestCase):
                 {"cid": "2", "text": "B", "create_time": 90, "digg_count": 9, "user": {}},
             ]
         }
-        with patch("social_media_toolkit.platforms.core.requests.get", return_value=FakeResponse(payload)):
+        with patch("social_media_toolkit.platforms.core.requests.get", return_value=FakeResponse(payload)) as request:
             result = fetch_douyin_public_comments("123456", sort_by="likes", limit=2)
         self.assertEqual([item["comment_id"] for item in result["comments"]], ["2", "1"])
         self.assertEqual(result["ranking_scope"], "retrieved_public_top_level_comments")
+        self.assertEqual(result["status"], "success")
         self.assertFalse(result["reply_bodies_included"])
+        self.assertEqual(request.call_args.kwargs["params"]["count"], 2)
+
+    def test_truncates_an_oversized_source_sample_to_the_requested_limit(self):
+        payload = {
+            "comments": [
+                {"cid": "1", "text": "A", "create_time": 100, "digg_count": 2, "user": {}},
+                {"cid": "2", "text": "B", "create_time": 90, "digg_count": 9, "user": {}},
+            ]
+        }
+        with patch("social_media_toolkit.platforms.core.requests.get", return_value=FakeResponse(payload)):
+            result = fetch_douyin_public_comments("123456", sort_by="likes", limit=1)
+        self.assertEqual(result["fetched_top_level_count"], 2)
+        self.assertEqual(result["returned_count"], 1)
+        self.assertEqual(len(result["comments"]), 1)
+
+    def test_accepts_up_to_one_hundred_and_returns_the_available_sample(self):
+        payload = {
+            "comments": [
+                {"cid": "1", "text": "A", "create_time": 100, "digg_count": 2, "user": {}},
+                {"cid": "2", "text": "B", "create_time": 90, "digg_count": 9, "user": {}},
+            ]
+        }
+        with patch("social_media_toolkit.platforms.core.requests.get", return_value=FakeResponse(payload)) as request:
+            result = fetch_douyin_public_comments("123456", sort_by="likes", limit=100)
+        self.assertEqual(request.call_args.kwargs["params"]["count"], 100)
+        self.assertEqual(result["requested_limit"], 100)
+        self.assertEqual(result["returned_count"], 2)
+        self.assertEqual(result["status"], "success")
+
+    def test_rejects_comment_limits_outside_supported_request_range(self):
+        for limit in (0, 101, True, 1.5):
+            with self.subTest(limit=limit):
+                with self.assertRaises(ValueError):
+                    fetch_douyin_public_comments("123456", limit=limit)
 
 
 class XHSStateParserTests(unittest.TestCase):

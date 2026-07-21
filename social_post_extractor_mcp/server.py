@@ -61,7 +61,7 @@ def social_get_comments(
     sort_by: str = "likes",
     limit: int = 10,
 ) -> str:
-    """Get supported public comments; currently Douyin top-level sample only."""
+    """Return up to 1-100 comments from Douyin's available public sample."""
     return _run(lambda: _TOOLKIT.get_comments(share_link, sort_by=sort_by, limit=limit))
 
 
