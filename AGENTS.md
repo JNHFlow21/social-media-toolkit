@@ -12,20 +12,22 @@ This repository is a public, reusable product. It must not depend on the Brain v
 
 ## Invariants
 
-1. Text precedence is GetNote original content → native platform subtitle → Volcengine cloud ASR.
-2. Non-empty GetNote original content wins even when a task still contains a stale error message.
-3. `inspect` and `text` do not download persistent media. Downloads require an explicit output directory.
-4. Every normalized result preserves provenance, warnings, and platform limitations.
-5. SDK, CLI, and MCP must call the same `SocialMediaToolkit`; do not add legacy aliases or a second scheduler.
-6. Volcengine is the only ASR provider. Do not add local ASR or another cloud fallback.
-7. Never claim a public comment sample is a global platform ranking.
-8. A `text`, text-enabled `capture`, or full-chain smoke-test request runs configured GetNote and Volcengine ASR automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
+1. Plain canonical-text precedence is GetNote original content → native platform subtitle → Volcengine cloud ASR.
+2. Timed YouTube transcripts are a separate evidence contract: manual subtitle cues → automatic subtitle cues → timestamped Volcengine cloud ASR. Non-timestamped GetNote text must not short-circuit this route.
+3. Non-empty GetNote original content wins even when a task still contains a stale error message on the plain canonical-text route.
+4. `inspect` and plain `text` do not download persistent media. Timed text requires an explicit output directory and may write only requested transcript artifacts; media remains temporary. Downloads require an explicit output directory.
+5. Every normalized result preserves provenance, warnings, and platform limitations.
+6. SDK, CLI, and MCP must call the same `SocialMediaToolkit`; do not add legacy aliases or a second scheduler.
+7. Volcengine is the only ASR provider. Do not add local ASR or another cloud fallback.
+8. Never claim a public comment sample is a global platform ranking.
+9. A plain `text`, text-enabled `capture`, timed-text, or full-chain smoke-test request runs its configured text route automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
 
 ## Secrets
 
 - Never commit, print, log, or paste secret values.
 - Do not ask users to send keys through chat.
 - Do not create or load project `.env` or secret config files.
+- The public runtime must work from standard process environment variables alone. Agent Switch is an optional maintainer integration; never import it or make it a package/runtime requirement.
 - Public documentation may list secret names only and should recommend an OS/client secret manager.
 - On the maintainer machine, Agent Switch is the sole source of truth:
   - inspect names with `agent-switch secret list`;

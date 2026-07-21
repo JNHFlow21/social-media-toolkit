@@ -1,6 +1,6 @@
 # Social Media Toolkit
 
-把抖音、小红书、Bilibili 和 YouTube 的公开链接，统一转换成文字、元数据、视频、封面、图片和公开评论。
+把抖音、小红书、Bilibili 和 YouTube 的公开链接，统一转换成文字、元数据、视频、封面、图片和公开评论；YouTube 还支持可回到原视频的 MD/SRT/JSON 时间轴逐字稿。
 
 同时提供：
 
@@ -10,15 +10,25 @@
 
 当前版本：`0.3.0`。
 
+## 独立运行：不依赖 Agent Switch
+
+这是一个标准 Python 开源项目。任何用户都可以直接 clone、安装和运行，**不需要安装 Agent Switch，也不依赖作者的本地工作区、Skill 或私有配置**。
+
+- 元数据读取、公开媒体下载、公开评论，以及带原生字幕的 Bilibili/YouTube 文字提取，不需要火山 API Key。
+- GetNote 是可选的第一文字来源；未安装或未登录时会自动继续走平台原生字幕或火山 ASR。
+- 只有进入火山云 ASR 时才需要标准进程环境变量 `VOLCENGINE_ASR_API_KEY`。
+- Agent Switch 只是维护者机器上的可选 secret-manager 适配；代码始终优先读取标准环境变量，找不到 Agent Switch 也能正常运行。
+- 项目不会读取仓库 `.env`，也不会依赖任何机器专属路径。
+
 ## 安装：把这段话复制给你的 AI Agent
 
 ```text
 请帮我安装 Social Media Toolkit：
-https://github.com/JNHFlow21/social-post-extractor-mcp
+https://github.com/JNHFlow21/social-media-toolkit
 
 要求：
 1. 把仓库 clone 到独立的公共工具目录，不要放进我的知识库、笔记库或业务项目。
-2. 确认 Python >= 3.10、uv、ffmpeg、Node.js 可用，然后执行 uv sync。
+2. 确认 Python >= 3.10、uv、ffmpeg、Node.js 可用，然后执行 uv sync；项目会安装带 `yt-dlp-ejs` 的 yt-dlp 默认依赖，以保证完整 YouTube 支持。
 3. 安装 GetNote CLI：npm install -g @getnote/cli，并让我通过 getnote auth login 自己完成授权。
 4. 检查 VOLCENGINE_ASR_API_KEY 是否已通过系统或 Agent 的 secret manager 安全配置；不要让我把 Key 发到聊天里，也不要把 Key 写进仓库、.env、README、MCP JSON 或日志。
 5. 把 uv run social-media-toolkit-mcp 注册成 stdio MCP Server。
@@ -28,8 +38,8 @@ https://github.com/JNHFlow21/social-post-extractor-mcp
 AI Agent 也可以按下面的命令手动安装：
 
 ```bash
-git clone https://github.com/JNHFlow21/social-post-extractor-mcp.git
-cd social-post-extractor-mcp
+git clone https://github.com/JNHFlow21/social-media-toolkit.git
+cd social-media-toolkit
 uv sync
 uv run socialkit doctor
 ```
@@ -74,7 +84,17 @@ VOLCENGINE_ASR_API_KEY
 
 请通过操作系统、MCP 客户端或 Agent 的 secret manager 注入，**不要创建项目 `.env`**。
 
-如果本机使用 Agent Switch，可通过隐藏输入写入，不把值放进命令参数：
+普通 shell 用户可以通过隐藏输入把 Key 只放入当前进程环境；该方式不需要 Agent Switch，也不会把 Key 写进命令历史：
+
+```bash
+read -s VOLCENGINE_ASR_API_KEY
+export VOLCENGINE_ASR_API_KEY
+uv run socialkit doctor
+```
+
+使用结束后可执行 `unset VOLCENGINE_ASR_API_KEY`。MCP 用户应通过客户端自己的 secret store 或安全环境注入同名变量。
+
+如果本机已经使用 Agent Switch，也可以选择通过隐藏输入写入；这只是可选集成：
 
 ```bash
 read -s VOLCENGINE_ASR_API_KEY
@@ -90,6 +110,7 @@ unset VOLCENGINE_ASR_API_KEY
 |---|---|---|---|
 | 统一元数据 | 标题、作者、发布时间、互动指标、媒体地址 | Python 依赖；YouTube 需要 `yt-dlp` | 否 |
 | 获取文字 | GetNote → 原生字幕 → 火山云 ASR | GetNote；无字幕视频需要 `VOLCENGINE_ASR_API_KEY` 和 `ffmpeg` | GetNote 会员、火山 ASR 可能付费 |
+| YouTube 时间轴逐字稿 | 人工字幕 cue → 自动字幕 cue → 火山云 ASR；输出 MD/SRT/JSON | `yt-dlp`；无字幕视频需要 `VOLCENGINE_ASR_API_KEY` 和 `ffmpeg` | 无字幕时火山 ASR 可能付费 |
 | 下载视频 | 下载完整视频并生成 SHA-256 清单 | 抖音/小红书走公开 CDN；B站/YouTube 需要 `yt-dlp` 和 `ffmpeg` | 工具本身免费 |
 | 下载封面/图片 | 保存封面和图文图片 | 公开链接 | 工具本身免费 |
 | 获取评论 | 获取抖音公开接口返回的一级评论样本 | 不需要登录或 Cookie | 否 |
@@ -128,6 +149,26 @@ flowchart LR
 
 文字结果不会下载持久媒体。火山转写需要的音频只存在于临时目录：下载远程媒体、用 `ffmpeg` 转成单声道 16kHz MP3、调用云端、随后删除临时目录。
 
+### YouTube 时间轴逐字稿
+
+普通 `text` 追求“拿到可读的 canonical text”，因此 GetNote 可以优先命中。时间轴模式追求“每句话能回到原视频”，所以是另一条确定性链路：
+
+```text
+YouTube 人工字幕 cue → YouTube 自动字幕 cue → 火山云 ASR utterance/word 时间轴
+```
+
+没有时间码的 GetNote 文本不会截断时间轴模式。该模式要求显式输出目录，只持久化请求的逐字稿文件；用于 ASR 的视频/音频始终在临时目录中并在调用结束后删除。
+
+默认产物：
+
+```text
+youtube-<video-id>-transcript.md
+youtube-<video-id>-transcript.srt
+youtube-<video-id>-transcript.timeline.json
+```
+
+JSON 保存规范化 `segments`，火山响应包含词级边界时还会保存脱敏后的 `words`。返回清单会明确记录 provider、route、timing precision、segment count、校验哈希以及临时媒体是否删除，不保存云端原始响应或 YouTube 的临时签名媒体 URL。
+
 ## CLI
 
 ### 检查安装状态
@@ -157,6 +198,17 @@ uv run socialkit inspect "SHARE_URL"
 ```bash
 uv run socialkit text "SHARE_URL"
 ```
+
+### 获取 YouTube 带时间轴逐字稿
+
+```bash
+uv run socialkit text "YOUTUBE_URL" \
+  --timed \
+  --output "/absolute/path/to/transcripts" \
+  --outputs md,srt,json
+```
+
+`--timed` 目前只接受单个 YouTube 视频 URL；即使链接带播放列表参数，也不会抓取整个播放列表。
 
 ### 获取抖音公开评论
 
@@ -192,6 +244,12 @@ toolkit = SocialMediaToolkit()
 
 metadata = toolkit.inspect("SHARE_URL")
 text = toolkit.get_text("SHARE_URL")
+timed = toolkit.get_text(
+    "YOUTUBE_URL",
+    timed=True,
+    output_dir="/absolute/path/to/transcripts",
+    outputs="md,srt,json",
+)
 comments = toolkit.get_comments("DOUYIN_URL", sort_by="likes", limit=10)
 
 bundle = toolkit.capture(
@@ -217,7 +275,7 @@ stdio MCP 示例：
 {
   "mcpServers": {
     "social-media-toolkit": {
-      "command": "/ABSOLUTE/PATH/social-post-extractor-mcp/.venv/bin/python",
+      "command": "/ABSOLUTE/PATH/social-media-toolkit/.venv/bin/python",
       "args": ["-m", "social_post_extractor_mcp"]
     }
   }
@@ -231,7 +289,7 @@ stdio MCP 示例：
 | MCP Tool | 作用 |
 |---|---|
 | `social_inspect` | 返回统一 `PostBundle`，不下载、不转写 |
-| `social_get_text` | 执行唯一文字路径 |
+| `social_get_text` | 默认执行 canonical text 路径；`timed=true` 时写出 YouTube MD/SRT/JSON 时间轴逐字稿 |
 | `social_get_comments` | 获取当前支持的公开评论样本 |
 | `social_download` | 显式下载媒体并返回校验清单 |
 | `social_capture_bundle` | 按需合并数据和下载 |

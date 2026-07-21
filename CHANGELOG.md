@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Documented and regression-tested the standalone public runtime: normal
+  process environment variables work without Agent Switch, which remains an
+  optional maintainer-only secret-manager fallback.
+- Updated repository and installation URLs for the `social-media-toolkit`
+  GitHub repository name.
+- Installed yt-dlp's recommended default extras (including `yt-dlp-ejs`) and
+  enabled Deno, Node.js, Bun, and QuickJS discovery for portable YouTube use.
+- Added an opt-in YouTube timed-transcript contract to the existing `text`
+  interface across SDK, CLI, and MCP.
+- Preserved manual/automatic YouTube subtitle cue intervals and added a
+  timestamped Volcengine ASR fallback with sanitized utterance/word timing.
+- Added explicit MD, SRT, and timeline JSON artifacts with stable video-id
+  names, SHA-256 manifests, and automatic temporary-media cleanup.
+- Kept the default GetNote-first canonical-text behavior backward compatible;
+  timed mode deliberately skips non-timestamped GetNote text.
+
 - Normalize second, millisecond, and microsecond platform timestamps before
   emitting `PostBundle.post.published_at` and `published_at_epoch`.
 - Treat `text`, text-enabled `capture`, and full-chain smoke-test requests as

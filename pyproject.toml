@@ -37,13 +37,13 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
     "requests",
-    "yt-dlp>=2026.7.4",
+    "yt-dlp[default]>=2026.7.4",
 ]
 
 [project.urls]
-Homepage = "https://github.com/JNHFlow21/social-post-extractor-mcp"
-Repository = "https://github.com/JNHFlow21/social-post-extractor-mcp"
-Issues = "https://github.com/JNHFlow21/social-post-extractor-mcp/issues"
+Homepage = "https://github.com/JNHFlow21/social-media-toolkit"
+Repository = "https://github.com/JNHFlow21/social-media-toolkit"
+Issues = "https://github.com/JNHFlow21/social-media-toolkit/issues"
 
 [project.scripts]
 social-post-extractor-mcp = "social_post_extractor_mcp.server:main"

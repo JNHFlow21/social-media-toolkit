@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 import requests
 
 from social_media_toolkit.platforms.core import HEADERS, SocialPost
+from social_media_toolkit.transcripts import normalize_segments, transcript_text
 
 
 VOLCENGINE_ASR_ENDPOINT = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"
@@ -45,6 +46,19 @@ class VolcengineASR:
         return bool(_load_api_key())
 
     def transcribe(self, post: SocialPost) -> str:
+        response, _duration_ms = self._transcribe_payload(post)
+        transcript = _transcript_text(response)
+        if not transcript:
+            raise VolcengineASRError("Volcengine cloud ASR returned no transcript text")
+        return transcript
+
+    def transcribe_timed(self, post: SocialPost) -> dict:
+        response, duration_ms = self._transcribe_payload(post)
+        timeline = _timed_transcript(response, duration_ms=duration_ms)
+        timeline["temp_media_deleted"] = True
+        return timeline
+
+    def _transcribe_payload(self, post: SocialPost) -> tuple[dict, int]:
         api_key = _load_api_key()
         if not api_key:
             raise VolcengineASRError(
@@ -71,10 +85,8 @@ class VolcengineASR:
         except Exception as exc:
             raise VolcengineASRError(f"Volcengine cloud ASR failed: {exc}") from exc
 
-        transcript = _transcript_text(response)
-        if not transcript:
-            raise VolcengineASRError("Volcengine cloud ASR returned no transcript text")
-        return transcript
+        duration_ms = max(0, int(post.duration_sec or 0) * 1000)
+        return response, duration_ms
 
 
 def _load_api_key() -> str | None:
@@ -230,6 +242,100 @@ def _transcript_text(payload: dict) -> str:
         for item in result.get("utterances") or []
         if isinstance(item, dict) and str(item.get("text") or "").strip()
     )
+
+
+def _timed_transcript(payload: dict, *, duration_ms: int = 0) -> dict:
+    result = payload.get("result") or {}
+    raw_utterances = result.get("utterances") or []
+    segments: list[dict] = []
+    for utterance in raw_utterances:
+        if not isinstance(utterance, dict):
+            continue
+        text = str(utterance.get("text") or "").strip()
+        if not text:
+            continue
+        start_ms = _first_int(utterance, ("start_time", "start", "start_ms", "begin_time"), 0)
+        end_ms = _first_int(utterance, ("end_time", "end", "end_ms", "finish_time"), start_ms)
+        segments.append({"start_ms": start_ms, "end_ms": end_ms, "text": text})
+
+    warnings: list[str] = []
+    precision = "asr_utterance"
+    if not segments:
+        text = _transcript_text(payload)
+        if not text:
+            raise VolcengineASRError("Volcengine cloud ASR returned no transcript text")
+        response_duration = _first_int(payload.get("audio_info") or {}, ("duration", "duration_ms"), 0)
+        end_ms = max(duration_ms, response_duration)
+        if end_ms <= 0:
+            raise VolcengineASRError("Volcengine cloud ASR returned text without a usable media duration")
+        segments = [{"start_ms": 0, "end_ms": end_ms, "text": text}]
+        precision = "whole_media"
+        warnings.append("Volcengine returned no utterance timing; only a whole-media interval is available")
+
+    segments = normalize_segments(segments)
+    words = _extract_asr_words(result, raw_utterances)
+    if words:
+        precision = "asr_word"
+    duration_ms = max(
+        duration_ms,
+        _first_int(payload.get("audio_info") or {}, ("duration", "duration_ms"), 0),
+        max(segment["end_ms"] for segment in segments),
+    )
+    return {
+        "text": transcript_text(segments),
+        "duration_ms": duration_ms,
+        "timing_precision": precision,
+        "segments": segments,
+        "words": words,
+        "warnings": warnings,
+    }
+
+
+def _extract_asr_words(result: dict, utterances: list) -> list[dict]:
+    words: list[dict] = []
+
+    def append(raw_words, utterance_index: int | None = None) -> None:
+        if isinstance(raw_words, dict):
+            raw_words = raw_words.get("words") or raw_words.get("items") or []
+        if not isinstance(raw_words, list):
+            return
+        for raw in raw_words:
+            if not isinstance(raw, dict):
+                continue
+            text = str(raw.get("text") or raw.get("word") or raw.get("token") or "").strip()
+            if not text:
+                continue
+            start_ms = _first_int(raw, ("start_time", "start", "start_ms", "begin_time"), -1)
+            end_ms = _first_int(raw, ("end_time", "end", "end_ms", "finish_time"), -1)
+            if start_ms < 0 or end_ms <= start_ms:
+                continue
+            item = {"text": text, "start_ms": start_ms, "end_ms": end_ms}
+            if utterance_index is not None:
+                item["utterance_index"] = utterance_index
+            words.append(item)
+
+    append(result.get("words") or result.get("word_info") or result.get("word_infos"))
+    for index, utterance in enumerate(utterances):
+        if not isinstance(utterance, dict):
+            continue
+        append(
+            utterance.get("words") or utterance.get("word_info") or utterance.get("word_infos"),
+            index,
+        )
+    words.sort(key=lambda item: (item["start_ms"], item["end_ms"], item["text"]))
+    return words
+
+
+def _first_int(mapping: dict, names: tuple[str, ...], default: int = 0) -> int:
+    for name in names:
+        value = mapping.get(name)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return default
 
 
 def _as_int(value: object) -> int:

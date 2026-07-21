@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +8,14 @@ from unittest.mock import patch
 from social_media_toolkit.downloader import MediaDownloader, _normalize_include, _validate_remote_url
 from social_media_toolkit.models import PostBundle
 from social_media_toolkit.platforms.core import BilibiliPlatformAdapter, SocialPost
-from social_media_toolkit.platforms.youtube import _parse_subtitle_payload, _select_subtitle_track
+from social_media_toolkit.platforms.youtube import (
+    _parse_subtitle_payload,
+    _parse_timed_subtitle_payload,
+    _select_subtitle_track,
+    _select_subtitle_track_with_preferences,
+    _timed_language_priority,
+    _youtube_ydl_options,
+)
 from social_media_toolkit.providers.getnote import GETNOTE_INSTALL_HINT, GetNoteResult, GetNoteTextProvider
 from social_media_toolkit.service import SocialMediaToolkit
 
@@ -36,17 +45,39 @@ class ExplodingGetNote(FakeGetNote):
 class FakeASR:
     provider_name = "volcengine_bigmodel"
 
-    def __init__(self, text: str = "云端 ASR 结果", *, configured: bool = True, error: Exception | None = None):
+    def __init__(
+        self,
+        text: str = "云端 ASR 结果",
+        *,
+        configured: bool = True,
+        error: Exception | None = None,
+        timed_result: dict | None = None,
+    ):
         self.text = text
         self._configured = configured
         self.error = error
         self.calls = []
+        self.timed_result = timed_result or {
+            "text": text,
+            "duration_ms": 3000,
+            "timing_precision": "asr_utterance",
+            "segments": [{"start_ms": 0, "end_ms": 3000, "text": text}],
+            "words": [],
+            "warnings": [],
+            "temp_media_deleted": True,
+        }
 
     def transcribe(self, post: SocialPost) -> str:
         self.calls.append(post)
         if self.error:
             raise self.error
         return self.text
+
+    def transcribe_timed(self, post: SocialPost) -> dict:
+        self.calls.append(post)
+        if self.error:
+            raise self.error
+        return self.timed_result
 
     def configured(self) -> bool:
         return self._configured
@@ -264,6 +295,105 @@ class TextPipelineTests(unittest.TestCase):
         self.assertIn("cloud unavailable", result["warnings"][-1])
         self.assertEqual(result["metadata"]["local_fallback"], False)
 
+    def test_timed_youtube_subtitle_writes_md_srt_json_without_getnote_or_asr(self):
+        post = make_video_post(platform="youtube")
+        post.source_url = "https://youtu.be/demo123"
+        post.page_url = "https://www.youtube.com/watch?v=demo123"
+        post.resolved_url = post.page_url
+        post.post_id = "demo123"
+        post.duration_sec = 4
+        post.transcript_segments = [
+            {"start_ms": 0, "end_ms": 1500, "text": "First sentence."},
+            {"start_ms": 1500, "end_ms": 4000, "text": "Second sentence."},
+        ]
+        post.extra["timed_subtitle"] = {
+            "source": "manual",
+            "language": "en",
+            "format": "json3",
+            "timing_precision": "caption_cue",
+        }
+        getnote = FakeGetNote(GetNoteResult(status="success", text="must not be used"))
+        asr = FakeASR(error=RuntimeError("must not run"))
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(post),
+            getnote=getnote,
+            asr=asr,
+            downloader=FakeDownloader(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = toolkit.get_text(
+                post.page_url,
+                timed=True,
+                output_dir=tmpdir,
+                outputs="md,srt,json",
+            )
+            artifacts = {item["kind"]: Path(item["path"]) for item in result["artifacts"]}
+            for item in result["artifacts"]:
+                self.assertEqual(
+                    item["sha256"],
+                    hashlib.sha256(Path(item["path"]).read_bytes()).hexdigest(),
+                )
+            timeline = json.loads(artifacts["json"].read_text(encoding="utf-8"))
+            markdown = artifacts["md"].read_text(encoding="utf-8")
+            srt = artifacts["srt"].read_text(encoding="utf-8")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["provider"], "platform_subtitle")
+        self.assertEqual(result["metadata"]["route"], "youtube.manual_subtitle_timed")
+        self.assertEqual(result["temporary_media"], "not_created")
+        self.assertEqual(result["segment_count"], 2)
+        self.assertEqual(getnote.calls, [])
+        self.assertEqual(asr.calls, [])
+        self.assertEqual(timeline["source"]["post_id"], "demo123")
+        self.assertEqual(timeline["segments"][1]["start_ms"], 1500)
+        self.assertIn("[00:00:00 - 00:00:01] First sentence.", markdown)
+        self.assertIn("00:00:01,500 --> 00:00:04,000", srt)
+
+    def test_timed_youtube_without_subtitles_uses_timestamped_volcengine(self):
+        post = make_video_post(platform="youtube")
+        post.post_id = "asr123"
+        post.page_url = "https://www.youtube.com/watch?v=asr123"
+        timed_result = {
+            "text": "ASR sentence.",
+            "duration_ms": 2500,
+            "timing_precision": "asr_word",
+            "segments": [{"start_ms": 250, "end_ms": 2250, "text": "ASR sentence."}],
+            "words": [{"text": "ASR", "start_ms": 250, "end_ms": 800}],
+            "warnings": [],
+            "temp_media_deleted": True,
+        }
+        asr = FakeASR(timed_result=timed_result)
+        getnote = FakeGetNote(GetNoteResult(status="success", text="must not be used"))
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(post),
+            getnote=getnote,
+            asr=asr,
+            downloader=FakeDownloader(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = toolkit.get_text(post.page_url, timed=True, output_dir=tmpdir)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["provider"], "volcengine_bigmodel")
+        self.assertEqual(result["timing_precision"], "asr_word")
+        self.assertEqual(result["metadata"]["getnote_used"], False)
+        self.assertTrue(result["temp_media_deleted"])
+        self.assertEqual(getnote.calls, [])
+        self.assertEqual(len(asr.calls), 1)
+
+    def test_timed_mode_requires_an_explicit_output_directory(self):
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(make_video_post(platform="youtube")),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            asr=FakeASR(),
+            downloader=FakeDownloader(),
+        )
+        result = toolkit.get_text("https://www.youtube.com/watch?v=demo", timed=True)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["metadata"]["route"], "timed_transcript.output_required")
+
     def test_capture_enriches_one_bundle_without_implicit_download(self):
         router = FakeRouter(make_video_post(subtitle="字幕", platform="douyin"))
         toolkit = SocialMediaToolkit(
@@ -313,6 +443,10 @@ class DownloaderTests(unittest.TestCase):
 
 
 class SubtitleTests(unittest.TestCase):
+    def test_youtube_enables_common_javascript_runtimes(self):
+        runtimes = _youtube_ydl_options()["js_runtimes"]
+        self.assertEqual(set(runtimes), {"deno", "node", "bun", "quickjs"})
+
     def test_youtube_prefers_manual_chinese_and_dedupes_vtt(self):
         selected = _select_subtitle_track({
             "en": [{"url": "https://example.com/en.vtt", "ext": "vtt"}],
@@ -324,6 +458,52 @@ class SubtitleTests(unittest.TestCase):
             "vtt",
         )
         self.assertEqual(text, "第一句话\n第二句话")
+
+    def test_youtube_json3_preserves_caption_cue_timing(self):
+        payload = json.dumps({
+            "events": [
+                {"tStartMs": 500, "dDurationMs": 1250, "segs": [{"utf8": "Hello "}, {"utf8": "world"}]},
+                {"tStartMs": 1750, "dDurationMs": 900, "segs": [{"utf8": "Next cue"}]},
+            ]
+        })
+        segments = _parse_timed_subtitle_payload(payload, "json3")
+        self.assertEqual(segments, [
+            {"start_ms": 500, "end_ms": 1750, "text": "Hello world"},
+            {"start_ms": 1750, "end_ms": 2650, "text": "Next cue"},
+        ])
+
+    def test_youtube_rolling_json3_cues_are_clamped_to_the_next_start(self):
+        payload = json.dumps({
+            "events": [
+                {"tStartMs": 1000, "dDurationMs": 4000, "segs": [{"utf8": "First phrase"}]},
+                {"tStartMs": 3000, "dDurationMs": 3000, "segs": [{"utf8": "Second phrase"}]},
+            ]
+        })
+        segments = _parse_timed_subtitle_payload(payload, "json3")
+        self.assertEqual(segments[0]["end_ms"], 3000)
+        self.assertEqual(segments[1]["end_ms"], 6000)
+
+    def test_youtube_timed_subtitles_prefer_the_original_language_track(self):
+        tracks = {
+            "en": [{"url": "https://example.com/translated.json3", "ext": "json3"}],
+            "en-orig": [{"url": "https://example.com/original.json3", "ext": "json3"}],
+        }
+        selected = _select_subtitle_track_with_preferences(
+            tracks,
+            language_priority=_timed_language_priority("en", tracks),
+            format_priority=("json3",),
+        )
+        self.assertEqual(selected[0], "en-orig")
+
+    def test_youtube_vtt_preserves_caption_cue_timing(self):
+        segments = _parse_timed_subtitle_payload(
+            """WEBVTT\n\n00:00:00.000 --> 00:00:01.250\n<c>First cue</c>\n\n00:00:01.250 --> 00:00:03.000\nSecond cue\n""",
+            "vtt",
+        )
+        self.assertEqual(segments, [
+            {"start_ms": 0, "end_ms": 1250, "text": "First cue"},
+            {"start_ms": 1250, "end_ms": 3000, "text": "Second cue"},
+        ])
 
     def test_bilibili_native_subtitle_is_joined_in_order(self):
         player_payload = {"data": {"subtitle": {"subtitles": [{"subtitle_url": "//example.com/s.json"}]}}}
