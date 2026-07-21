@@ -19,6 +19,7 @@ from social_media_toolkit.providers.volcengine import (
     VolcengineASR,
     VolcengineASRError,
     _call_volcengine,
+    _timed_transcript,
     _transcript_text,
 )
 from social_media_toolkit.service import SocialMediaToolkit
@@ -174,6 +175,65 @@ class VolcengineASRTests(unittest.TestCase):
             _transcript_text({"result": {"utterances": [{"text": "第一句"}, {"text": "第二句"}]}}),
             "第一句\n第二句",
         )
+
+    def test_timed_transcript_preserves_utterance_and_word_boundaries(self):
+        result = _timed_transcript(
+            {
+                "result": {
+                    "utterances": [
+                        {
+                            "start_time": 100,
+                            "end_time": 900,
+                            "text": "Hello world",
+                            "words": [
+                                {"text": "Hello", "start_time": 100, "end_time": 400},
+                                {"text": "world", "start_time": 450, "end_time": 900},
+                            ],
+                        }
+                    ]
+                }
+            },
+            duration_ms=1000,
+        )
+        self.assertEqual(result["timing_precision"], "asr_word")
+        self.assertEqual(result["segments"], [
+            {"start_ms": 100, "end_ms": 900, "text": "Hello world"}
+        ])
+        self.assertEqual(result["words"][1]["start_ms"], 450)
+        self.assertEqual(result["duration_ms"], 1000)
+
+    def test_transcribe_timed_reports_temporary_media_deleted(self):
+        observed = {}
+
+        def fake_download(_url, temp_dir, *, referer):
+            observed["temp_dir"] = temp_dir
+            source = temp_dir / "source.mp4"
+            source.write_bytes(b"source")
+            return source
+
+        def fake_prepare(_source, temp_dir):
+            audio = temp_dir / "speech.mp3"
+            audio.write_bytes(b"audio")
+            return audio
+
+        payload = {
+            "result": {
+                "utterances": [
+                    {"start_time": 0, "end_time": 800, "text": "Timed result"}
+                ]
+            }
+        }
+        with (
+            patch("social_media_toolkit.providers.volcengine._load_api_key", return_value="test-key"),
+            patch("social_media_toolkit.providers.volcengine._download_media", side_effect=fake_download),
+            patch("social_media_toolkit.providers.volcengine._prepare_audio", side_effect=fake_prepare),
+            patch("social_media_toolkit.providers.volcengine._call_volcengine", return_value=payload),
+        ):
+            result = VolcengineASR().transcribe_timed(self.post)
+        self.assertEqual(result["segments"][0]["text"], "Timed result")
+        self.assertEqual(result["timing_precision"], "asr_utterance")
+        self.assertTrue(result["temp_media_deleted"])
+        self.assertFalse(observed["temp_dir"].exists())
 
     def test_request_uses_cloud_transcript_protocol_constants(self):
         class FakeHTTPResponse:

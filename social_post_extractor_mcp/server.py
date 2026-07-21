@@ -38,9 +38,21 @@ def social_inspect(share_link: str) -> str:
 
 
 @mcp.tool()
-def social_get_text(share_link: str) -> str:
-    """Get text through GetNote → native subtitle → Volcengine cloud ASR."""
-    return _run(lambda: _TOOLKIT.get_text(share_link))
+def social_get_text(
+    share_link: str,
+    timed: bool = False,
+    output_dir: Optional[str] = None,
+    outputs: str = "md,srt,json",
+) -> str:
+    """Get canonical text, or write timed YouTube MD/SRT/JSON artifacts."""
+    return _run(
+        lambda: _TOOLKIT.get_text(
+            share_link,
+            timed=timed,
+            output_dir=output_dir,
+            outputs=outputs,
+        )
+    )
 
 
 @mcp.tool()
@@ -112,10 +124,15 @@ Text always follows one route:
 2. Native Bilibili/YouTube subtitle when available
 3. Volcengine cloud ASR using `VOLCENGINE_ASR_API_KEY`
 
+For a YouTube evidence transcript, call `social_get_text` with `timed=true`
+and an absolute `output_dir`. This skips non-timestamped GetNote text, preserves
+manual/automatic subtitle cues, and falls back to timestamped Volcengine ASR.
+It writes the requested `md,srt,json` artifacts and removes temporary media.
+
 There is no local ASR and no alternate cloud-ASR provider. If Volcengine ASR
 fails, return its error directly. Run `social_doctor` after installation for
-setup commands and official links. Media writes require an explicit
-`output_dir`.
+setup commands and official links. Media writes and timed transcript artifacts
+require an explicit `output_dir`.
 """
 
 

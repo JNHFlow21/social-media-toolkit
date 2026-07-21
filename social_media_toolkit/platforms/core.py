@@ -59,6 +59,8 @@ class SocialPost:
     owner_metrics: dict[str, Any] = field(default_factory=dict)
     media: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
+    transcript_segments: list[dict[str, Any]] = field(default_factory=list)
+    transcript_words: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.author_profile:

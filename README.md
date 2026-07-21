@@ -1,6 +1,6 @@
 # Social Media Toolkit
 
-把抖音、小红书、Bilibili 和 YouTube 的公开链接，统一转换成文字、元数据、视频、封面、图片和公开评论。
+把抖音、小红书、Bilibili 和 YouTube 的公开链接，统一转换成文字、元数据、视频、封面、图片和公开评论；YouTube 还支持可回到原视频的 MD/SRT/JSON 时间轴逐字稿。
 
 同时提供：
 
@@ -8,7 +8,7 @@
 - `socialkit` CLI
 - MCP Server
 
-当前版本：`0.3.0`。
+当前版本：`0.3.0`；YouTube 时间轴逐字稿已进入 `main` 前的功能分支验证阶段。
 
 ## 安装：把这段话复制给你的 AI Agent
 
@@ -90,6 +90,7 @@ unset VOLCENGINE_ASR_API_KEY
 |---|---|---|---|
 | 统一元数据 | 标题、作者、发布时间、互动指标、媒体地址 | Python 依赖；YouTube 需要 `yt-dlp` | 否 |
 | 获取文字 | GetNote → 原生字幕 → 火山云 ASR | GetNote；无字幕视频需要 `VOLCENGINE_ASR_API_KEY` 和 `ffmpeg` | GetNote 会员、火山 ASR 可能付费 |
+| YouTube 时间轴逐字稿 | 人工字幕 cue → 自动字幕 cue → 火山云 ASR；输出 MD/SRT/JSON | `yt-dlp`；无字幕视频需要 `VOLCENGINE_ASR_API_KEY` 和 `ffmpeg` | 无字幕时火山 ASR 可能付费 |
 | 下载视频 | 下载完整视频并生成 SHA-256 清单 | 抖音/小红书走公开 CDN；B站/YouTube 需要 `yt-dlp` 和 `ffmpeg` | 工具本身免费 |
 | 下载封面/图片 | 保存封面和图文图片 | 公开链接 | 工具本身免费 |
 | 获取评论 | 获取抖音公开接口返回的一级评论样本 | 不需要登录或 Cookie | 否 |
@@ -128,6 +129,26 @@ flowchart LR
 
 文字结果不会下载持久媒体。火山转写需要的音频只存在于临时目录：下载远程媒体、用 `ffmpeg` 转成单声道 16kHz MP3、调用云端、随后删除临时目录。
 
+### YouTube 时间轴逐字稿
+
+普通 `text` 追求“拿到可读的 canonical text”，因此 GetNote 可以优先命中。时间轴模式追求“每句话能回到原视频”，所以是另一条确定性链路：
+
+```text
+YouTube 人工字幕 cue → YouTube 自动字幕 cue → 火山云 ASR utterance/word 时间轴
+```
+
+没有时间码的 GetNote 文本不会截断时间轴模式。该模式要求显式输出目录，只持久化请求的逐字稿文件；用于 ASR 的视频/音频始终在临时目录中并在调用结束后删除。
+
+默认产物：
+
+```text
+youtube-<video-id>-transcript.md
+youtube-<video-id>-transcript.srt
+youtube-<video-id>-transcript.timeline.json
+```
+
+JSON 保存规范化 `segments`，火山响应包含词级边界时还会保存脱敏后的 `words`。返回清单会明确记录 provider、route、timing precision、segment count、校验哈希以及临时媒体是否删除，不保存云端原始响应或 YouTube 的临时签名媒体 URL。
+
 ## CLI
 
 ### 检查安装状态
@@ -157,6 +178,17 @@ uv run socialkit inspect "SHARE_URL"
 ```bash
 uv run socialkit text "SHARE_URL"
 ```
+
+### 获取 YouTube 带时间轴逐字稿
+
+```bash
+uv run socialkit text "YOUTUBE_URL" \
+  --timed \
+  --output "/absolute/path/to/transcripts" \
+  --outputs md,srt,json
+```
+
+`--timed` 目前只接受单个 YouTube 视频 URL；即使链接带播放列表参数，也不会抓取整个播放列表。
 
 ### 获取抖音公开评论
 
@@ -192,6 +224,12 @@ toolkit = SocialMediaToolkit()
 
 metadata = toolkit.inspect("SHARE_URL")
 text = toolkit.get_text("SHARE_URL")
+timed = toolkit.get_text(
+    "YOUTUBE_URL",
+    timed=True,
+    output_dir="/absolute/path/to/transcripts",
+    outputs="md,srt,json",
+)
 comments = toolkit.get_comments("DOUYIN_URL", sort_by="likes", limit=10)
 
 bundle = toolkit.capture(
@@ -231,7 +269,7 @@ stdio MCP 示例：
 | MCP Tool | 作用 |
 |---|---|
 | `social_inspect` | 返回统一 `PostBundle`，不下载、不转写 |
-| `social_get_text` | 执行唯一文字路径 |
+| `social_get_text` | 默认执行 canonical text 路径；`timed=true` 时写出 YouTube MD/SRT/JSON 时间轴逐字稿 |
 | `social_get_comments` | 获取当前支持的公开评论样本 |
 | `social_download` | 显式下载媒体并返回校验清单 |
 | `social_capture_bundle` | 按需合并数据和下载 |

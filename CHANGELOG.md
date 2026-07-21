@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added an opt-in YouTube timed-transcript contract to the existing `text`
+  interface across SDK, CLI, and MCP.
+- Preserved manual/automatic YouTube subtitle cue intervals and added a
+  timestamped Volcengine ASR fallback with sanitized utterance/word timing.
+- Added explicit MD, SRT, and timeline JSON artifacts with stable video-id
+  names, SHA-256 manifests, and automatic temporary-media cleanup.
+- Kept the default GetNote-first canonical-text behavior backward compatible;
+  timed mode deliberately skips non-timestamped GetNote text.
+
 - Normalize second, millisecond, and microsecond platform timestamps before
   emitting `PostBundle.post.published_at` and `published_at_epoch`.
 - Treat `text`, text-enabled `capture`, and full-chain smoke-test requests as

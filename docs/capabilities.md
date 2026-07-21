@@ -7,6 +7,7 @@
 | Public metrics | ✅ | ✅ | ✅ | ✅ when exposed |
 | GetNote original content | ✅ | ✅ | ✅ | ✅ |
 | Native subtitles | — | — | ✅ when exposed | ✅ manual, then automatic |
+| Timed transcript artifacts | — | — | — | ✅ MD/SRT/JSON; manual cues → automatic cues → timed ASR |
 | Volcengine cloud ASR | ✅ video | ✅ video | ✅ | ✅ |
 | Cover download | ✅ | ✅ | ✅ | ✅ |
 | Video download | ✅ direct | ✅ direct | ✅ via yt-dlp | ✅ via yt-dlp |
@@ -28,6 +29,9 @@
   replies are counted but reply bodies are not fetched.
 - Platform pages and public endpoints can change.
 - Native subtitles are not guaranteed for a particular video.
+- Timed transcript mode currently supports one YouTube video URL at a time and
+  requires an explicit output directory. GetNote is intentionally skipped
+  because its canonical text does not guarantee source-video timecodes.
 - No local ASR is available. A Volcengine failure is terminal and explicit.
 - No OCR/Vision fallback is available. GetNote failure on an image post falls
   back only to the platform's text body.

@@ -27,17 +27,23 @@ from .providers.volcengine import (
     VOLCENGINE_ASR_SECRET_NAME,
     VolcengineASR,
 )
+from .transcripts import (
+    SUPPORTED_TRANSCRIPT_OUTPUTS,
+    build_timed_transcript_document,
+    write_timed_transcript_artifacts,
+)
 
 
 class SocialMediaToolkit:
     """One deterministic path for metadata, text, media, and comments.
 
-    Text always follows this contract:
+    Plain canonical text follows this contract:
 
     ``GetNote original content -> native subtitle -> Volcengine cloud ASR``.
 
-    There is no provider selector, local ASR, OCR, cleanup model, browser path,
-    or implicit persistent download in this orchestrator.
+    Timed YouTube evidence follows manual cues -> automatic cues -> timestamped
+    Volcengine ASR. There is no provider selector, local ASR, OCR, cleanup
+    model, browser path, or implicit persistent media download.
     """
 
     def __init__(
@@ -64,8 +70,38 @@ class SocialMediaToolkit:
         """Return a normalized PostBundle without downloading media or running ASR."""
         return PostBundle.from_social_post(self.router.parse(url)).to_dict()
 
-    def get_text(self, url: str, *, _post: Optional[SocialPost] = None) -> dict[str, Any]:
-        """Get canonical text through the one supported text route."""
+    def get_text(
+        self,
+        url: str,
+        *,
+        timed: bool = False,
+        output_dir: Optional[str] = None,
+        outputs: Sequence[str] | str = SUPPORTED_TRANSCRIPT_OUTPUTS,
+        _post: Optional[SocialPost] = None,
+    ) -> dict[str, Any]:
+        """Get canonical text, or explicitly request durable timed artifacts.
+
+        The default route is unchanged and may use GetNote. ``timed=True`` is
+        a different evidence contract: it requires an output directory, skips
+        non-timestamped GetNote text, and preserves YouTube cue or ASR timing.
+        """
+        if timed:
+            if not output_dir:
+                return TextExtractionResult(
+                    status="error",
+                    provider=None,
+                    text=None,
+                    platform=self._infer_platform(url),
+                    warnings=["Timed transcript mode requires output_dir"],
+                    metadata={"route": "timed_transcript.output_required"},
+                ).to_dict()
+            return self.get_timed_transcript(
+                url,
+                output_dir=output_dir,
+                outputs=outputs,
+                _post=_post,
+            )
+
         warnings: list[str] = []
 
         try:
@@ -188,6 +224,130 @@ class SocialMediaToolkit:
             },
         ).to_dict()
 
+    def get_timed_transcript(
+        self,
+        url: str,
+        *,
+        output_dir: str,
+        outputs: Sequence[str] | str = SUPPORTED_TRANSCRIPT_OUTPUTS,
+        _post: Optional[SocialPost] = None,
+    ) -> dict[str, Any]:
+        """Write a YouTube transcript whose intervals map to the source video."""
+        try:
+            post = _post or self.router.parse(url)
+        except Exception as exc:
+            return {
+                "status": "error",
+                "provider": None,
+                "platform": self._infer_platform(url),
+                "warnings": [f"Platform extraction failed: {exc}"],
+                "metadata": {"route": "timed_transcript.platform_extraction_failed"},
+            }
+
+        if post.platform != "youtube":
+            return {
+                "status": "error",
+                "provider": None,
+                "platform": post.platform,
+                "post_id": post.post_id,
+                "title": post.title,
+                "warnings": ["Timed transcript mode currently supports YouTube URLs only"],
+                "metadata": {"route": "timed_transcript.unsupported_platform"},
+            }
+
+        subtitle_meta = (post.extra or {}).get("timed_subtitle") or {}
+        segments = list(post.transcript_segments or [])
+        words = list(post.transcript_words or [])
+        warnings: list[str] = []
+        temp_media_deleted = True
+        if segments:
+            subtitle_source = str(subtitle_meta.get("source") or "native")
+            provider = "platform_subtitle"
+            route = f"youtube.{subtitle_source}_subtitle_timed"
+            timing_precision = str(subtitle_meta.get("timing_precision") or "caption_cue")
+            duration_ms = max(0, int(post.duration_sec or 0) * 1000)
+            temporary_media = "not_created"
+        else:
+            try:
+                timeline = self.asr.transcribe_timed(post)
+            except Exception as exc:
+                return {
+                    "status": "error",
+                    "provider": self.asr.provider_name,
+                    "platform": post.platform,
+                    "post_id": post.post_id,
+                    "title": post.title,
+                    "warnings": [str(exc)],
+                    "metadata": {
+                        "route": "volcengine.cloud_asr_timed_failed",
+                        "secret_name": VOLCENGINE_ASR_SECRET_NAME,
+                        "local_fallback": False,
+                        "getnote_used": False,
+                    },
+                }
+            segments = list(timeline.get("segments") or [])
+            words = list(timeline.get("words") or [])
+            warnings.extend(timeline.get("warnings") or [])
+            provider = self.asr.provider_name
+            route = "volcengine.bigmodel_flash_timed"
+            timing_precision = str(timeline.get("timing_precision") or "asr_utterance")
+            duration_ms = int(timeline.get("duration_ms") or 0)
+            temp_media_deleted = bool(timeline.get("temp_media_deleted", True))
+            temporary_media = "deleted" if temp_media_deleted else "unknown"
+
+        try:
+            document = build_timed_transcript_document(
+                platform=post.platform,
+                post_id=post.post_id,
+                title=post.title,
+                source_url=post.page_url or post.resolved_url or post.source_url,
+                original_url=post.source_url,
+                duration_ms=duration_ms,
+                provider=provider,
+                route=route,
+                timing_precision=timing_precision,
+                segments=segments,
+                words=words,
+            )
+            artifacts = write_timed_transcript_artifacts(
+                document,
+                output_dir=output_dir,
+                outputs=outputs,
+            )
+        except Exception as exc:
+            return {
+                "status": "error",
+                "provider": provider,
+                "platform": post.platform,
+                "post_id": post.post_id,
+                "title": post.title,
+                "warnings": _dedupe(warnings + [str(exc)]),
+                "metadata": {"route": "timed_transcript.artifact_write_failed"},
+            }
+
+        return {
+            "status": "success",
+            "provider": provider,
+            "platform": post.platform,
+            "post_id": post.post_id,
+            "title": post.title,
+            "source_url": document["source"]["url"],
+            "duration_ms": document["source"]["duration_ms"],
+            "timing_precision": document["timing_precision"],
+            "segment_count": document["segment_count"],
+            "word_count": document["word_count"],
+            "artifacts": artifacts,
+            "temporary_media": temporary_media,
+            "temp_media_deleted": temp_media_deleted,
+            "warnings": _dedupe(warnings),
+            "metadata": {
+                "route": route,
+                "getnote_used": False,
+                "subtitle": subtitle_meta,
+                "local_fallback": False,
+            },
+        }
+
     def get_comments(self, url: str, *, sort_by: str = "likes", limit: int = 10) -> dict[str, Any]:
         post = self.router.parse(url)
         return self.router.get_douyin_comments_for_post(post, sort_by=sort_by, limit=limit)
@@ -304,6 +464,13 @@ class SocialMediaToolkit:
             ),
             "supported_platforms": ["douyin", "xiaohongshu", "bilibili", "youtube"],
             "text_route": ["getnote", "platform_subtitle", "volcengine_cloud_asr"],
+            "timed_transcript": {
+                "platforms": ["youtube"],
+                "route": ["manual_subtitle_cues", "automatic_subtitle_cues", "volcengine_timed_asr"],
+                "outputs": list(SUPPORTED_TRANSCRIPT_OUTPUTS),
+                "requires_output_dir": True,
+                "getnote_used": False,
+            },
             "local_asr_fallback": False,
             "capabilities": {
                 "getnote": {
