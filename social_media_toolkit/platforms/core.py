@@ -32,7 +32,8 @@ DOUYIN_MOBILE_HEADERS = {
 }
 
 DOUYIN_PUBLIC_COMMENT_ENDPOINT = "https://www.iesdouyin.com/web/api/v2/comment/list/"
-DOUYIN_PUBLIC_COMMENT_LIMIT = 10
+DOUYIN_PUBLIC_COMMENT_DEFAULT_LIMIT = 10
+DOUYIN_PUBLIC_COMMENT_MAX_LIMIT = 100
 
 
 @dataclass
@@ -285,10 +286,16 @@ class DouyinPlatformAdapter(PlatformAdapter):
         share_kind = "note" if "/note/" in share_response.url else "video"
         share_url = f"https://www.iesdouyin.com/share/{share_kind}/{video_id}"
 
-        response = requests.get(share_url, headers=DOUYIN_MOBILE_HEADERS, timeout=30)
-        response.raise_for_status()
         pattern = re.compile(r"window\._ROUTER_DATA\s*=\s*(.*?)</script>", flags=re.DOTALL)
-        match = pattern.search(response.text)
+        # A signed public share URL may already contain the complete router
+        # payload and set the anonymous share cookie. Parse that first response
+        # directly instead of discarding it and issuing a second unsigned
+        # request, which can be replaced by Douyin's JavaScript challenge page.
+        match = pattern.search(share_response.text)
+        if not match:
+            response = requests.get(share_url, headers=DOUYIN_MOBILE_HEADERS, timeout=30)
+            response.raise_for_status()
+            match = pattern.search(response.text)
         if not match:
             raise ValueError("从抖音 HTML 中解析视频信息失败")
 
@@ -303,7 +310,16 @@ class DouyinPlatformAdapter(PlatformAdapter):
         if not video_info_res:
             raise ValueError("无法从抖音 JSON 中解析视频或图集信息")
 
-        item = (video_info_res.get("item_list") or [{}])[0]
+        item_list = video_info_res.get("item_list") or []
+        if not item_list:
+            filter_entry = next(
+                (entry for entry in (video_info_res.get("filter_list") or []) if isinstance(entry, dict)),
+                {},
+            )
+            reason = filter_entry.get("filter_reason") or "not_publicly_available"
+            detail = filter_entry.get("detail_msg") or filter_entry.get("notice") or "作品不存在或不可公开访问"
+            raise ValueError(f"抖音作品不可用（{reason}）：{detail}")
+        item = item_list[0]
         video = item.get("video") or {}
         play_addr = video.get("play_addr") or {}
         url_list = play_addr.get("url_list") or []
@@ -397,20 +413,23 @@ def fetch_douyin_public_comments(
     video_id: str,
     *,
     referer: Optional[str] = None,
-    limit: int = DOUYIN_PUBLIC_COMMENT_LIMIT,
+    limit: int = DOUYIN_PUBLIC_COMMENT_DEFAULT_LIMIT,
     sort_by: str = "likes",
 ) -> dict[str, Any]:
     """Fetch the public top-level comments exposed by Douyin's mobile share API.
 
     This path is HTTP-only: it does not use a browser, CDP, Playwright, or a
-    logged-in account. The public endpoint currently exposes at most ten
-    top-level comments and reply counts, but not the reply bodies.
+    logged-in account. ``limit`` is the caller's requested sample size, not a
+    coverage guarantee: the public endpoint may return a smaller fixed sample
+    and currently exposes no usable pagination cursor.
     """
 
     if not video_id or not str(video_id).isdigit():
         raise ValueError("无效的抖音视频 ID")
-    if not 1 <= limit <= DOUYIN_PUBLIC_COMMENT_LIMIT:
-        raise ValueError(f"limit 必须在 1 到 {DOUYIN_PUBLIC_COMMENT_LIMIT} 之间")
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise ValueError("limit 必须是整数")
+    if not 1 <= limit <= DOUYIN_PUBLIC_COMMENT_MAX_LIMIT:
+        raise ValueError(f"limit 必须在 1 到 {DOUYIN_PUBLIC_COMMENT_MAX_LIMIT} 之间")
 
     normalized_sort = _normalize_douyin_comment_sort(sort_by)
     headers = {
@@ -421,7 +440,7 @@ def fetch_douyin_public_comments(
     response = requests.get(
         DOUYIN_PUBLIC_COMMENT_ENDPOINT,
         headers=headers,
-        params={"aweme_id": str(video_id), "cursor": 0, "count": DOUYIN_PUBLIC_COMMENT_LIMIT},
+        params={"aweme_id": str(video_id), "cursor": 0, "count": limit},
         timeout=30,
     )
     response.raise_for_status()
@@ -444,18 +463,19 @@ def fetch_douyin_public_comments(
     else:
         comments.sort(key=lambda item: (item["create_time"], item["like_count"]), reverse=True)
 
+    selected_comments = comments[:limit]
     return {
+        "status": "success",
         "video_id": str(video_id),
         "sort_by": normalized_sort,
         "ranking_scope": "retrieved_public_top_level_comments",
         "requested_limit": limit,
         "fetched_top_level_count": len(comments),
-        "returned_count": min(limit, len(comments)),
-        "reported_reply_count": sum(item["reply_count"] for item in comments),
+        "returned_count": len(selected_comments),
+        "reported_reply_count": sum(item["reply_count"] for item in selected_comments),
         "reply_bodies_included": False,
-        "comments": comments[:limit],
+        "comments": selected_comments,
         "source": "douyin_public_mobile_share_api",
-        "source_limit": DOUYIN_PUBLIC_COMMENT_LIMIT,
     }
 
 
@@ -689,7 +709,7 @@ class PlatformRouter:
         self,
         post: SocialPost,
         *,
-        limit: int = DOUYIN_PUBLIC_COMMENT_LIMIT,
+        limit: int = DOUYIN_PUBLIC_COMMENT_DEFAULT_LIMIT,
         sort_by: str = "likes",
     ) -> dict[str, Any]:
         if post.platform != "douyin":
@@ -700,9 +720,9 @@ class PlatformRouter:
             limit=limit,
             sort_by=sort_by,
         )
+        result.setdefault("status", "success")
         result.update(
             {
-                "status": "success",
                 "title": post.title,
                 "author_name": post.author_name,
                 "reported_comment_total": _coerce_int(post.public_metrics.get("comments")),

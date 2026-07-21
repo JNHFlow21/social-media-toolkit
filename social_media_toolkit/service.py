@@ -416,8 +416,11 @@ class SocialMediaToolkit:
                         "items": comments.get("comments") or [],
                         "reported_total": comments.get("reported_comment_total"),
                         "coverage": comments.get("ranking_scope"),
+                        "status": comments.get("status"),
                         "sort_by": comments.get("sort_by"),
                         "source": comments.get("source"),
+                        "requested_limit": comments.get("requested_limit"),
+                        "returned_count": comments.get("returned_count"),
                         "reply_bodies_included": comments.get("reply_bodies_included", False),
                     }
                     bundle.provenance["routes"].append("comments:douyin_public_mobile_share_api")

@@ -42,7 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     comments_parser = subparsers.add_parser("comments", help="Fetch supported public comments")
     comments_parser.add_argument("url")
     comments_parser.add_argument("--sort", dest="sort_by", choices=("likes", "recent"), default="likes")
-    comments_parser.add_argument("--limit", type=int, default=10)
+    comments_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Requested sample size from 1 to 100; the public source may return fewer comments",
+    )
 
     download_parser = subparsers.add_parser("download", help="Explicitly download selected media")
     download_parser.add_argument("url")
@@ -53,7 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("url")
     capture_parser.add_argument("--comments", action="store_true")
     capture_parser.add_argument("--comment-sort", choices=("likes", "recent"), default="likes")
-    capture_parser.add_argument("--comment-limit", type=int, default=10)
+    capture_parser.add_argument(
+        "--comment-limit",
+        type=int,
+        default=10,
+        help="Maximum returned comment sample size from 1 to 100; the source may return fewer",
+    )
     capture_parser.add_argument("--output", dest="output_dir")
     capture_parser.add_argument("--media", default="video,cover,images")
     capture_parser.add_argument("--no-text", action="store_true")

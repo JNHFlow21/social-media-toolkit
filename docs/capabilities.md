@@ -25,8 +25,10 @@
 
 ## Honest limitations
 
-- Douyin comments are at most the public endpoint's returned top-level sample;
-  replies are counted but reply bodies are not fetched.
+- Douyin comment callers may request up to 1–100 top-level items. The toolkit
+  returns whatever public sample is available, capped at the requested limit;
+  it does not paginate or backfill. Replies are counted but reply bodies are
+  not fetched.
 - Platform pages and public endpoints can change.
 - Native subtitles are not guaranteed for a particular video.
 - Timed transcript mode currently supports one YouTube video URL at a time and

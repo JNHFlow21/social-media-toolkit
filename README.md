@@ -138,12 +138,12 @@ unset VOLCENGINE_ASR_API_KEY
 
 | 平台 | 元数据 | 文字 | 视频 | 封面/图片 | 公开评论 |
 |---|---:|---:|---:|---:|---:|
-| 抖音 | ✅ | GetNote → 火山 ASR | ✅ | ✅，含公开图集 | ✅ 最多 10 条一级评论样本 |
+| 抖音 | ✅ | GetNote → 火山 ASR | ✅ | ✅，含公开图集 | ✅ 可请求 1–100 条一级评论样本；源站可能少返回 |
 | 小红书 | ✅ | GetNote → 图文正文 / 火山 ASR | ✅ | ✅ | — |
 | Bilibili | ✅ | GetNote → 原生字幕 → 火山 ASR | ✅ | ✅ | — |
 | YouTube | ✅ | GetNote → 人工字幕 → 自动字幕 → 火山 ASR | ✅ | ✅ | — |
 
-评论的 `likes` / `recent` 排序，只针对公开接口实际返回的样本，不代表平台全量评论的全局排名。
+评论的 `likes` / `recent` 排序，只针对公开接口实际返回的样本，不代表平台全量评论的全局排名。`--limit`、MCP `limit` 和 bundle `comment_limit` 接受 `1..100`，表示最多返回多少条。源站给多少就返回多少：请求 20、源站给 19，就返回 19，不翻页、不补抓。
 
 ## 唯一文字处理路径
 
@@ -231,7 +231,9 @@ socialkit text "YOUTUBE_URL" \
 
 ```bash
 socialkit comments "DOUYIN_URL" --sort likes --limit 10
-socialkit comments "DOUYIN_URL" --sort recent --limit 10
+socialkit comments "DOUYIN_URL" --sort likes --limit 20
+socialkit comments "DOUYIN_URL" --sort likes --limit 50
+socialkit comments "DOUYIN_URL" --sort recent --limit 100
 ```
 
 ### 显式下载媒体
