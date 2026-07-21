@@ -1,0 +1,7 @@
+**/__pycache__/
+**/*.py[cod]
+.venv/
+dist/
+node_modules/
+npm-tests/
+tests/

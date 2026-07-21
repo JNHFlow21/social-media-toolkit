@@ -44,6 +44,8 @@ htmlcov/
 # Distribution
 *.tar.gz
 *.whl
+*.tgz
+node_modules/
 
 .claude
 temp/

@@ -1,0 +1,37 @@
+{
+  "name": "social-media-toolkit",
+  "version": "0.3.0",
+  "description": "One-command installer for the Social Media Toolkit Python SDK, CLI, and MCP server",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "social-media-toolkit": "bin/social-media-toolkit.mjs"
+  },
+  "files": [
+    "bin/",
+    "social_media_toolkit/**/*.py",
+    "social_post_extractor_mcp/**/*.py",
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "scripts": {
+    "test": "node --test npm-tests/*.test.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JNHFlow21/social-media-toolkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JNHFlow21/social-media-toolkit/issues"
+  },
+  "homepage": "https://github.com/JNHFlow21/social-media-toolkit#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
