@@ -9,6 +9,7 @@ from social_media_toolkit.downloader import MediaDownloader, _normalize_include,
 from social_media_toolkit.models import PostBundle
 from social_media_toolkit.platforms.core import BilibiliPlatformAdapter, SocialPost
 from social_media_toolkit.platforms.youtube import (
+    _extract_youtube_info,
     _parse_subtitle_payload,
     _parse_timed_subtitle_payload,
     _select_subtitle_track,
@@ -450,6 +451,37 @@ class SubtitleTests(unittest.TestCase):
     def test_youtube_enables_common_javascript_runtimes(self):
         runtimes = _youtube_ydl_options()["js_runtimes"]
         self.assertEqual(set(runtimes), {"deno", "node", "bun", "quickjs"})
+
+    def test_youtube_retries_with_public_mweb_client_after_default_failure(self):
+        attempts = []
+
+        class FakeYoutubeDL:
+            def __init__(self, options):
+                self.options = options
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def extract_info(self, url, download=False):
+                client = (
+                    self.options.get("extractor_args", {})
+                    .get("youtube", {})
+                    .get("player_client", ["default"])[0]
+                )
+                attempts.append(client)
+                if client == "default":
+                    raise RuntimeError("sign in to confirm you are not a bot")
+                return {"id": "video-1", "title": "Recovered"}
+
+        fake_module = type("FakeYtDlp", (), {"YoutubeDL": FakeYoutubeDL})
+        info, route = _extract_youtube_info(fake_module, "https://www.youtube.com/watch?v=video-1")
+
+        self.assertEqual(info["id"], "video-1")
+        self.assertEqual(route, "mweb")
+        self.assertEqual(attempts, ["default", "mweb"])
 
     def test_youtube_prefers_manual_chinese_and_dedupes_vtt(self):
         selected = _select_subtitle_track({

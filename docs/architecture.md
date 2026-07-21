@@ -75,6 +75,12 @@ route:
 2. Prefer manual subtitle cues in the source language.
 3. Otherwise use automatic subtitle cues in the source language.
 4. If no timed subtitle exists, temporarily prepare audio and call Volcengine.
+
+YouTube metadata extraction first uses yt-dlp's normal public route. If YouTube
+rejects that request with its anonymous bot check, the adapter retries once
+with yt-dlp's public `mweb` client. This fallback does not load browser cookies
+or require a signed-in account; when that client exposes no subtitle tracks,
+the normal timestamped Volcengine fallback remains responsible for the text.
 5. Preserve sanitized utterance/word intervals and write requested MD/SRT/JSON.
 6. Delete temporary media before returning.
 
