@@ -19,14 +19,20 @@ SUBTITLE_FORMAT_PRIORITY = ("vtt", "json3", "srv3", "ttml")
 TIMED_SUBTITLE_FORMAT_PRIORITY = ("json3", "vtt", "srv3", "ttml")
 
 
-def _youtube_ydl_options() -> dict[str, Any]:
+YOUTUBE_METADATA_ATTEMPTS: tuple[tuple[str, Optional[str]], ...] = (
+    ("default", None),
+    ("mweb", "mweb"),
+)
+
+
+def _youtube_ydl_options(*, player_client: Optional[str] = None) -> dict[str, Any]:
     """Return portable yt-dlp options with every supported JS runtime enabled.
 
     yt-dlp defaults to Deno only. Public users commonly have Node.js instead,
     so explicitly enable every supported runtime and let yt-dlp select the one
     actually installed on the machine.
     """
-    return {
+    options: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -39,6 +45,28 @@ def _youtube_ydl_options() -> dict[str, Any]:
             "quickjs": {},
         },
     }
+    if player_client:
+        options["extractor_args"] = {"youtube": {"player_client": [player_client]}}
+    return options
+
+
+def _extract_youtube_info(yt_dlp_module: Any, source_url: str) -> tuple[dict[str, Any], str]:
+    """Extract one video, retrying a public no-login client when YouTube blocks the default route."""
+    failures: list[str] = []
+    for route, player_client in YOUTUBE_METADATA_ATTEMPTS:
+        options = _youtube_ydl_options(player_client=player_client)
+        try:
+            with yt_dlp_module.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(source_url, download=False)
+        except Exception as exc:
+            failures.append(f"{route}: {exc}")
+            continue
+        if isinstance(info, dict) and info.get("id"):
+            return info, route
+        failures.append(f"{route}: YouTube returned no usable video metadata")
+
+    detail = " | ".join(failures) or "no extraction attempt completed"
+    raise RuntimeError(f"YouTube metadata extraction failed after public no-login retries: {detail}")
 
 
 class YouTubePlatformAdapter(PlatformAdapter):
@@ -53,12 +81,10 @@ class YouTubePlatformAdapter(PlatformAdapter):
         except ImportError as exc:
             raise RuntimeError("YouTube support requires yt-dlp: pip install yt-dlp") from exc
 
-        options = _youtube_ydl_options()
         try:
-            with yt_dlp.YoutubeDL(options) as ydl:
-                info = ydl.extract_info(source_url, download=False)
+            info, extraction_route = _extract_youtube_info(yt_dlp, source_url)
         except Exception as exc:
-            raise RuntimeError(f"YouTube metadata extraction failed: {exc}") from exc
+            raise RuntimeError(str(exc)) from exc
 
         if not isinstance(info, dict) or not info.get("id"):
             raise RuntimeError("YouTube returned no usable video metadata")
@@ -106,6 +132,7 @@ class YouTubePlatformAdapter(PlatformAdapter):
             "live_status": info.get("live_status"),
             "categories": info.get("categories") or [],
             "language": info.get("language"),
+            "metadata_extraction_route": extraction_route,
         }
         return SocialPost(
             platform="youtube",
