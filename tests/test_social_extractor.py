@@ -19,6 +19,7 @@ from social_media_toolkit.providers.volcengine import (
     VolcengineASR,
     VolcengineASRError,
     _call_volcengine,
+    _load_api_key,
     _timed_transcript,
     _transcript_text,
 )
@@ -148,6 +149,24 @@ class VolcengineASRTests(unittest.TestCase):
         with patch("social_media_toolkit.providers.volcengine._load_api_key", return_value=None):
             with self.assertRaisesRegex(VolcengineASRError, VOLCENGINE_ASR_SECRET_NAME):
                 VolcengineASR().transcribe(self.post)
+
+    def test_process_environment_works_without_agent_switch(self):
+        with (
+            patch.dict("os.environ", {VOLCENGINE_ASR_SECRET_NAME: "synthetic-public-key"}, clear=True),
+            patch("social_media_toolkit.providers.volcengine.shutil.which") as find_executable,
+        ):
+            self.assertEqual(_load_api_key(), "synthetic-public-key")
+        find_executable.assert_not_called()
+
+    def test_missing_agent_switch_is_not_a_runtime_error(self):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "social_media_toolkit.providers.volcengine.shutil.which",
+                return_value=None,
+            ),
+        ):
+            self.assertIsNone(_load_api_key())
 
     def test_transcribe_uses_only_volcengine_response(self):
         with tempfile.TemporaryDirectory() as tmpdir:

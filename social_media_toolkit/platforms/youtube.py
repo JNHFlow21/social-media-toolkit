@@ -19,6 +19,28 @@ SUBTITLE_FORMAT_PRIORITY = ("vtt", "json3", "srv3", "ttml")
 TIMED_SUBTITLE_FORMAT_PRIORITY = ("json3", "vtt", "srv3", "ttml")
 
 
+def _youtube_ydl_options() -> dict[str, Any]:
+    """Return portable yt-dlp options with every supported JS runtime enabled.
+
+    yt-dlp defaults to Deno only. Public users commonly have Node.js instead,
+    so explicitly enable every supported runtime and let yt-dlp select the one
+    actually installed on the machine.
+    """
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "socket_timeout": 30,
+        "js_runtimes": {
+            "deno": {},
+            "node": {},
+            "bun": {},
+            "quickjs": {},
+        },
+    }
+
+
 class YouTubePlatformAdapter(PlatformAdapter):
     def can_handle(self, share_text: str) -> bool:
         lowered = share_text.lower()
@@ -31,13 +53,7 @@ class YouTubePlatformAdapter(PlatformAdapter):
         except ImportError as exc:
             raise RuntimeError("YouTube support requires yt-dlp: pip install yt-dlp") from exc
 
-        options = {
-            "quiet": True,
-            "no_warnings": True,
-            "skip_download": True,
-            "noplaylist": True,
-            "socket_timeout": 30,
-        }
+        options = _youtube_ydl_options()
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(source_url, download=False)

@@ -27,6 +27,7 @@ This repository is a public, reusable product. It must not depend on the Brain v
 - Never commit, print, log, or paste secret values.
 - Do not ask users to send keys through chat.
 - Do not create or load project `.env` or secret config files.
+- The public runtime must work from standard process environment variables alone. Agent Switch is an optional maintainer integration; never import it or make it a package/runtime requirement.
 - Public documentation may list secret names only and should recommend an OS/client secret manager.
 - On the maintainer machine, Agent Switch is the sole source of truth:
   - inspect names with `agent-switch secret list`;

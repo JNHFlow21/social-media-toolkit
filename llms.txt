@@ -33,6 +33,9 @@ Only MCP tools:
 - social_doctor
 
 Important:
+- This is a standalone public Python package. Agent Switch is optional and is
+  never a package or runtime requirement; public users may inject
+  VOLCENGINE_ASR_API_KEY through the normal process environment.
 - No legacy aliases or second scheduler.
 - No OCR, LLM cleanup, browser analytics, or publishing.
 - Media download and timed transcript artifacts require an explicit output directory.

@@ -14,6 +14,7 @@ from social_media_toolkit.platforms.youtube import (
     _select_subtitle_track,
     _select_subtitle_track_with_preferences,
     _timed_language_priority,
+    _youtube_ydl_options,
 )
 from social_media_toolkit.providers.getnote import GETNOTE_INSTALL_HINT, GetNoteResult, GetNoteTextProvider
 from social_media_toolkit.service import SocialMediaToolkit
@@ -442,6 +443,10 @@ class DownloaderTests(unittest.TestCase):
 
 
 class SubtitleTests(unittest.TestCase):
+    def test_youtube_enables_common_javascript_runtimes(self):
+        runtimes = _youtube_ydl_options()["js_runtimes"]
+        self.assertEqual(set(runtimes), {"deno", "node", "bun", "quickjs"})
+
     def test_youtube_prefers_manual_chinese_and_dedupes_vtt(self):
         selected = _select_subtitle_track({
             "en": [{"url": "https://example.com/en.vtt", "ext": "vtt"}],

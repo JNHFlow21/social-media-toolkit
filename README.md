@@ -8,17 +8,27 @@
 - `socialkit` CLI
 - MCP Server
 
-当前版本：`0.3.0`；YouTube 时间轴逐字稿已进入 `main` 前的功能分支验证阶段。
+当前版本：`0.3.0`。
+
+## 独立运行：不依赖 Agent Switch
+
+这是一个标准 Python 开源项目。任何用户都可以直接 clone、安装和运行，**不需要安装 Agent Switch，也不依赖作者的本地工作区、Skill 或私有配置**。
+
+- 元数据读取、公开媒体下载、公开评论，以及带原生字幕的 Bilibili/YouTube 文字提取，不需要火山 API Key。
+- GetNote 是可选的第一文字来源；未安装或未登录时会自动继续走平台原生字幕或火山 ASR。
+- 只有进入火山云 ASR 时才需要标准进程环境变量 `VOLCENGINE_ASR_API_KEY`。
+- Agent Switch 只是维护者机器上的可选 secret-manager 适配；代码始终优先读取标准环境变量，找不到 Agent Switch 也能正常运行。
+- 项目不会读取仓库 `.env`，也不会依赖任何机器专属路径。
 
 ## 安装：把这段话复制给你的 AI Agent
 
 ```text
 请帮我安装 Social Media Toolkit：
-https://github.com/JNHFlow21/social-post-extractor-mcp
+https://github.com/JNHFlow21/social-media-toolkit
 
 要求：
 1. 把仓库 clone 到独立的公共工具目录，不要放进我的知识库、笔记库或业务项目。
-2. 确认 Python >= 3.10、uv、ffmpeg、Node.js 可用，然后执行 uv sync。
+2. 确认 Python >= 3.10、uv、ffmpeg、Node.js 可用，然后执行 uv sync；项目会安装带 `yt-dlp-ejs` 的 yt-dlp 默认依赖，以保证完整 YouTube 支持。
 3. 安装 GetNote CLI：npm install -g @getnote/cli，并让我通过 getnote auth login 自己完成授权。
 4. 检查 VOLCENGINE_ASR_API_KEY 是否已通过系统或 Agent 的 secret manager 安全配置；不要让我把 Key 发到聊天里，也不要把 Key 写进仓库、.env、README、MCP JSON 或日志。
 5. 把 uv run social-media-toolkit-mcp 注册成 stdio MCP Server。
@@ -28,8 +38,8 @@ https://github.com/JNHFlow21/social-post-extractor-mcp
 AI Agent 也可以按下面的命令手动安装：
 
 ```bash
-git clone https://github.com/JNHFlow21/social-post-extractor-mcp.git
-cd social-post-extractor-mcp
+git clone https://github.com/JNHFlow21/social-media-toolkit.git
+cd social-media-toolkit
 uv sync
 uv run socialkit doctor
 ```
@@ -74,7 +84,17 @@ VOLCENGINE_ASR_API_KEY
 
 请通过操作系统、MCP 客户端或 Agent 的 secret manager 注入，**不要创建项目 `.env`**。
 
-如果本机使用 Agent Switch，可通过隐藏输入写入，不把值放进命令参数：
+普通 shell 用户可以通过隐藏输入把 Key 只放入当前进程环境；该方式不需要 Agent Switch，也不会把 Key 写进命令历史：
+
+```bash
+read -s VOLCENGINE_ASR_API_KEY
+export VOLCENGINE_ASR_API_KEY
+uv run socialkit doctor
+```
+
+使用结束后可执行 `unset VOLCENGINE_ASR_API_KEY`。MCP 用户应通过客户端自己的 secret store 或安全环境注入同名变量。
+
+如果本机已经使用 Agent Switch，也可以选择通过隐藏输入写入；这只是可选集成：
 
 ```bash
 read -s VOLCENGINE_ASR_API_KEY
@@ -255,7 +275,7 @@ stdio MCP 示例：
 {
   "mcpServers": {
     "social-media-toolkit": {
-      "command": "/ABSOLUTE/PATH/social-post-extractor-mcp/.venv/bin/python",
+      "command": "/ABSOLUTE/PATH/social-media-toolkit/.venv/bin/python",
       "args": ["-m", "social_post_extractor_mcp"]
     }
   }

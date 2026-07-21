@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Documented and regression-tested the standalone public runtime: normal
+  process environment variables work without Agent Switch, which remains an
+  optional maintainer-only secret-manager fallback.
+- Updated repository and installation URLs for the `social-media-toolkit`
+  GitHub repository name.
+- Installed yt-dlp's recommended default extras (including `yt-dlp-ejs`) and
+  enabled Deno, Node.js, Bun, and QuickJS discovery for portable YouTube use.
 - Added an opt-in YouTube timed-transcript contract to the existing `text`
   interface across SDK, CLI, and MCP.
 - Preserved manual/automatic YouTube subtitle cue intervals and added a

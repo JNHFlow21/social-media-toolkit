@@ -93,7 +93,10 @@ side-effect-free behavior is required.
 - Runtime secret name: `VOLCENGINE_ASR_API_KEY` only.
 - Secret values never appear in results or logs.
 - The project does not load repository `.env` files.
-- Agent Switch is used through an inherited file descriptor when available.
+- Standard process environment is the portable public configuration path.
+- Agent Switch is an optional maintainer-only fallback, used through an
+  inherited file descriptor when its executable happens to be available; it is
+  not imported, packaged, or required.
 - Downloader accepts HTTP(S), rejects local/private literal IPs, limits bytes,
   sanitizes filenames, and records SHA-256.
 - Tests use synthetic fixtures.
