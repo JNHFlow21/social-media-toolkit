@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Social Media Toolkit</title>
+  <desc id="desc">A white sketch-style diagram showing public Douyin, RedNote, Bilibili, and YouTube links flowing through one toolkit into normalized JSON, timed transcripts, media files, and MCP tools.</desc>
+  <defs>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.3" fill="#e7e9ee"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#101828" flood-opacity="0.09"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#20242c"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="640" fill="#ffffff"/>
+  <rect width="1280" height="640" fill="url(#dots)" opacity="0.62"/>
+  <path d="M48 48 C244 35 409 42 594 45 C797 49 1014 38 1231 50" fill="none" stroke="#20242c" stroke-width="3" stroke-linecap="round" opacity="0.28"/>
+
+  <g font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#111318">
+    <text x="76" y="115" font-size="54" font-weight="750" letter-spacing="-1.5">Social Media Toolkit</text>
+    <text x="78" y="153" font-size="21" fill="#555c69">Public social links → normalized evidence your code and agents can use</text>
+  </g>
+
+  <g filter="url(#shadow)" font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="74" y="218" width="290" height="278" rx="24" fill="#ffffff" stroke="#20242c" stroke-width="3"/>
+    <path d="M98 249 C159 244 217 251 340 247" fill="none" stroke="#ff6b5d" stroke-width="8" stroke-linecap="round" opacity="0.78"/>
+    <text x="104" y="292" font-size="22" font-weight="700" fill="#111318">PUBLIC LINKS</text>
+
+    <g font-size="19" font-weight="620" fill="#303541">
+      <rect x="104" y="320" width="105" height="48" rx="12" fill="#fff5f3" stroke="#e7aca5" stroke-width="2"/>
+      <text x="128" y="351">Douyin</text>
+      <rect x="225" y="320" width="105" height="48" rx="12" fill="#fff5f3" stroke="#e7aca5" stroke-width="2"/>
+      <text x="246" y="351">RedNote</text>
+      <rect x="104" y="384" width="105" height="48" rx="12" fill="#f2f7ff" stroke="#9ebce8" stroke-width="2"/>
+      <text x="121" y="415">Bilibili</text>
+      <rect x="225" y="384" width="105" height="48" rx="12" fill="#f2f7ff" stroke="#9ebce8" stroke-width="2"/>
+      <text x="237" y="415">YouTube</text>
+    </g>
+    <text x="105" y="466" font-size="16" fill="#69707d">No cookies · no browser login</text>
+  </g>
+
+  <path d="M386 359 C427 344 454 346 488 358" fill="none" stroke="#20242c" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)" font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="505" y="243" width="268" height="230" rx="29" fill="#edfdf3" stroke="#1d7d4c" stroke-width="4"/>
+    <path d="M568 306 C598 274 651 273 682 304 C712 335 703 381 669 400 C636 420 589 405 570 373 C558 352 558 327 568 306 z" fill="#ffffff" stroke="#1d7d4c" stroke-width="3"/>
+    <path d="M607 326 L638 307 L669 326 L669 364 L638 383 L607 364 z" fill="none" stroke="#ff6b5d" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M625 338 L635 349 L655 329" fill="none" stroke="#1d7d4c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="548" y="438" font-size="23" font-weight="760" fill="#153d2a">ONE TOOLKIT</text>
+  </g>
+
+  <path d="M790 359 C825 344 856 347 893 358" fill="none" stroke="#20242c" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)" font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="912" y="218" width="294" height="278" rx="24" fill="#ffffff" stroke="#20242c" stroke-width="3"/>
+    <path d="M938 249 C1012 244 1105 252 1181 247" fill="none" stroke="#6c47ff" stroke-width="8" stroke-linecap="round" opacity="0.72"/>
+    <text x="941" y="292" font-size="22" font-weight="700" fill="#111318">VERIFIED OUTPUTS</text>
+
+    <g font-size="18" font-weight="640" fill="#303541">
+      <rect x="942" y="320" width="108" height="50" rx="12" fill="#f7f5ff" stroke="#b4a5eb" stroke-width="2"/>
+      <text x="962" y="351">JSON</text>
+      <rect x="1064" y="320" width="108" height="50" rx="12" fill="#f7f5ff" stroke="#b4a5eb" stroke-width="2"/>
+      <text x="1082" y="351">MD · SRT</text>
+      <rect x="942" y="386" width="108" height="50" rx="12" fill="#f2f7ff" stroke="#9ebce8" stroke-width="2"/>
+      <text x="958" y="417">Media</text>
+      <rect x="1064" y="386" width="108" height="50" rx="12" fill="#f2f7ff" stroke="#9ebce8" stroke-width="2"/>
+      <text x="1080" y="417">MCP</text>
+    </g>
+    <text x="942" y="466" font-size="16" fill="#69707d">Provenance · warnings · hashes</text>
+  </g>
+
+  <g font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="385" y="536" width="510" height="58" rx="29" fill="#111318"/>
+    <text x="640" y="573" text-anchor="middle" font-size="19" font-weight="680" fill="#ffffff" letter-spacing="0.4">Python SDK  ·  socialkit CLI  ·  MCP Server</text>
+  </g>
+</svg>

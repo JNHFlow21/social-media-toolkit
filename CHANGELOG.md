@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## 0.4.0 - 2026-08-11
+
+- Added duration-aware Volcengine routing: flash ASR through two hours,
+  asynchronous standard ASR through five hours using a temporary private TOS
+  object, and an early unsupported error above five hours.
+- Kept the same timed transcript, speaker-diarization, context, and cleanup
+  contract across both ASR routes; standard-route TOS objects are deleted after
+  success or failure.
+
 - Added a dependency-free Node.js bootstrap so the public toolkit can be
   installed or updated with one NPX command from GitHub.
 - The bootstrap reuses `uv` when present, installs official `uv` from
@@ -30,6 +41,13 @@
 - Treat `text`, text-enabled `capture`, and full-chain smoke-test requests as
   the execution signal for configured GetNote and Volcengine ASR, without a
   second authorization prompt.
+- Added a canonical English README and synchronized Simplified Chinese README,
+  an exact 1280×640 social preview, focused GitHub discovery metadata, and a
+  privacy-safe Repository Pulse chart.
+- Added cross-platform Python and Node.js CI, Git history secret scanning,
+  contributor and security policies, issue/PR templates, dependency updates,
+  and versioned GitHub Release artifacts with SHA-256 checksums.
+- Hardened XML subtitle parsing against entity-expansion and external-entity payloads.
 
 ## 0.3.0 - 2026-07-13
 

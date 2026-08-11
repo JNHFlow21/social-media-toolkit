@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use Social Media Toolkit in published work, cite this software release."
+title: "Social Media Toolkit"
+type: software
+authors:
+  - family-names: "JNHFlow21"
+version: "0.4.0"
+date-released: 2026-08-11
+repository-code: "https://github.com/JNHFlow21/social-media-toolkit"
+url: "https://github.com/JNHFlow21/social-media-toolkit"
+license: Apache-2.0
+keywords:
+  - social media extraction
+  - Model Context Protocol
+  - timed transcripts
+  - Douyin
+  - Xiaohongshu
+  - Bilibili
+  - YouTube
+

@@ -27,9 +27,12 @@ Text route:
 Timed YouTube route (opt-in on social_get_text):
 1. Require timed=true and an absolute output_dir
 2. Manual subtitle cues, then automatic subtitle cues
-3. Timestamped Volcengine ASR when no timed subtitle exists
-4. Write requested md,srt,json artifacts and delete temporary media
-5. Skip GetNote because plain text cannot anchor source-video clips
+3. Timestamped Volcengine ASR when no timed subtitle exists, or when force_asr=true
+4. Route media through two hours to flash ASR and over two through five hours
+   to standard ASR with one temporary private TOS object
+5. Reject media over five hours before download; do not auto-chunk
+6. Write requested md,srt,json artifacts and delete temporary media/TOS objects
+7. Skip GetNote because plain text cannot anchor source-video clips
 
 Only MCP tools:
 - social_inspect
@@ -48,3 +51,11 @@ Important:
 - Media download and timed transcript artifacts require an explicit output directory.
 - Never output or store secret values.
 - Never call a public comment sample a global ranking.
+- Standard long-recording ASR requires TOS_ACCESS_KEY and TOS_SECRET_KEY plus
+  non-sensitive TOS bucket, region, and endpoint configuration.
+- The project collects no product telemetry.
+
+Public trust and contribution routes:
+- SECURITY.md
+- CONTRIBUTING.md
+- CHANGELOG.md

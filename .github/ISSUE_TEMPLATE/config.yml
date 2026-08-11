@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/JNHFlow21/social-media-toolkit/security/advisories/new
+    about: Report vulnerabilities without exposing exploit details or private data.
+  - name: Documentation
+    url: https://github.com/JNHFlow21/social-media-toolkit#readme
+    about: Check installation, routes, requirements, and limitations before opening an issue.
+

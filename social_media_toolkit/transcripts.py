@@ -63,6 +63,7 @@ def normalize_segments(segments: Iterable[dict[str, Any]]) -> list[dict[str, Any
         if (
             deduped
             and deduped[-1]["text"] == item["text"]
+            and deduped[-1].get("speaker") == item.get("speaker")
             and item["start_ms"] <= deduped[-1]["end_ms"] + 1000
         ):
             deduped[-1]["end_ms"] = max(deduped[-1]["end_ms"], item["end_ms"])
@@ -88,6 +89,8 @@ def build_timed_transcript_document(
     timing_precision: str,
     segments: Sequence[dict[str, Any]],
     words: Sequence[dict[str, Any]] = (),
+    speaker_diarization: dict[str, Any] | None = None,
+    asr_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_segments(segments)
     if not normalized:
@@ -96,7 +99,7 @@ def build_timed_transcript_document(
         _as_nonnegative_int(duration_ms),
         max(item["end_ms"] for item in normalized),
     )
-    return {
+    document = {
         "schema_version": TIMED_TRANSCRIPT_SCHEMA_VERSION,
         "source": {
             "platform": platform,
@@ -115,6 +118,11 @@ def build_timed_transcript_document(
         "segments": normalized,
         "words": list(words),
     }
+    if speaker_diarization is not None:
+        document["speaker_diarization"] = dict(speaker_diarization)
+    if asr_config is not None:
+        document["asr_config"] = dict(asr_config)
+    return document
 
 
 def write_timed_transcript_artifacts(
@@ -170,9 +178,11 @@ def render_timed_markdown(document: dict[str, Any]) -> str:
         "\n## 分段逐字稿\n\n",
     ]
     for segment in document.get("segments") or []:
+        speaker = str(segment.get("speaker") or "").strip()
+        prefix = f"{speaker}｜" if speaker else ""
         lines.append(
             f"[{short_time(segment['start_ms'])} - {short_time(segment['end_ms'])}] "
-            f"{segment['text']}\n"
+            f"{prefix}{segment['text']}\n"
         )
     return "".join(lines)
 
@@ -211,7 +221,9 @@ def srt_time(milliseconds: int) -> str:
 def _atomic_write_text(path: Path, payload: str) -> None:
     staged = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        staged.write_text(payload, encoding="utf-8")
+        # Write exact UTF-8 bytes so checksums and artifacts stay identical on
+        # Windows, macOS, and Linux instead of inheriting platform newlines.
+        staged.write_bytes(payload.encode("utf-8"))
         staged.replace(path)
     finally:
         staged.unlink(missing_ok=True)

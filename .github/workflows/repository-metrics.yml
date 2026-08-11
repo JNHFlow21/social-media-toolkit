@@ -1,0 +1,40 @@
+name: repository-metrics
+
+on:
+  watch:
+    types: [started]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repository-metrics
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Render privacy-safe metrics SVG
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/render_repository_metrics.py
+          --repository "$GITHUB_REPOSITORY"
+          --traffic-snapshot .github/repository-metrics-traffic.json
+          --output "$RUNNER_TEMP/repository-metrics.svg"
+      - name: Publish generated image to the metrics branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan repository-metrics-output
+          git rm -rf .
+          cp "$RUNNER_TEMP/repository-metrics.svg" repository-metrics.svg
+          git add repository-metrics.svg
+          git commit -m "chore: refresh repository metrics"
+          git push --force origin HEAD:metrics

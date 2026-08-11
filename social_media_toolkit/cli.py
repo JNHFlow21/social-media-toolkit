@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .service import SocialMediaToolkit
@@ -37,6 +38,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--outputs",
         default="md,srt,json",
         help="Comma-separated timed artifacts: md,srt,json (default: all three)",
+    )
+    text_parser.add_argument(
+        "--force-asr",
+        action="store_true",
+        help="With --timed, bypass native YouTube subtitles and always run Volcengine ASR",
+    )
+    text_parser.add_argument(
+        "--speaker-info",
+        action="store_true",
+        help="With --timed --force-asr, request anonymous speaker diarization",
+    )
+    text_parser.add_argument(
+        "--asr-context-file",
+        help="With --timed --force-asr, read one public-metadata context JSON object",
     )
 
     comments_parser = subparsers.add_parser("comments", help="Fetch supported public comments")
@@ -76,11 +91,19 @@ def run_command(args: argparse.Namespace, toolkit: SocialMediaToolkit) -> dict[s
     if args.command == "inspect":
         return toolkit.inspect(args.url)
     if args.command == "text":
+        if (args.force_asr or args.speaker_info or args.asr_context_file) and not args.timed:
+            raise ValueError("--force-asr, --speaker-info, and --asr-context-file require --timed")
+        if (args.speaker_info or args.asr_context_file) and not args.force_asr:
+            raise ValueError("--speaker-info and --asr-context-file require --force-asr")
+        asr_context = _read_json_object(args.asr_context_file) if args.asr_context_file else None
         return toolkit.get_text(
             args.url,
             timed=args.timed,
             output_dir=args.text_output_dir,
             outputs=args.outputs,
+            force_asr=args.force_asr,
+            speaker_info=args.speaker_info,
+            asr_context=asr_context,
         )
     if args.command == "comments":
         return toolkit.get_comments(args.url, sort_by=args.sort_by, limit=args.limit)
@@ -99,6 +122,19 @@ def run_command(args: argparse.Namespace, toolkit: SocialMediaToolkit) -> dict[s
     if args.command == "doctor":
         return toolkit.doctor()
     raise ValueError(f"Unknown command: {args.command}")
+
+
+def _read_json_object(path: str) -> dict[str, Any]:
+    source = Path(path).expanduser().resolve()
+    try:
+        value = json.loads(source.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"ASR context file does not exist: {source}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"ASR context file is invalid JSON: {source}: {exc}") from exc
+    if not isinstance(value, dict) or not value:
+        raise ValueError("ASR context file must contain one non-empty JSON object")
+    return value
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
