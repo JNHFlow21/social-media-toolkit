@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a focused, public-read capability or portability improvement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+      description: What should a developer or agent be able to complete?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Public evidence or protocol
+      description: Link to public documentation or a synthetic example when available.
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Primary interface
+      options:
+        - Python SDK
+        - socialkit CLI
+        - MCP server
+        - NPX installer
+        - Documentation / portability
+    validations:
+      required: true
+  - type: textarea
+    id: effects
+    attributes:
+      label: Side effects and boundaries
+      description: Describe network calls, credentials, costs, permissions, or persistent files.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Product boundary
+      options:
+        - label: This request does not require private-account analytics, browser automation, or authenticated publishing.
+          required: true
+

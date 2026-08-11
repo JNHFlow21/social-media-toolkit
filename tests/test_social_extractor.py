@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from social_media_toolkit.platforms.core import (
     BilibiliPlatformAdapter,
@@ -15,12 +15,20 @@ from social_media_toolkit.platforms.core import (
     normalize_douyin_public_comment,
 )
 from social_media_toolkit.providers.volcengine import (
+    MAX_STANDARD_DURATION_SECONDS,
+    STANDARD_SUCCESS_CODE,
+    VOLCENGINE_ASR_STANDARD_QUERY_ENDPOINT,
+    VOLCENGINE_ASR_STANDARD_RESOURCE_ID,
+    VOLCENGINE_ASR_STANDARD_SUBMIT_ENDPOINT,
     VOLCENGINE_ASR_RESOURCE_ID,
     VOLCENGINE_ASR_SECRET_NAME,
     VolcengineASR,
     VolcengineASRError,
     _call_volcengine,
+    _call_volcengine_standard,
+    _download_youtube_media,
     _load_api_key,
+    _submit_and_query_standard,
     _timed_transcript,
     _transcript_text,
 )
@@ -250,6 +258,45 @@ class VolcengineASRTests(unittest.TestCase):
             with self.assertRaisesRegex(VolcengineASRError, VOLCENGINE_ASR_SECRET_NAME):
                 VolcengineASR().transcribe(self.post)
 
+    def test_route_rejects_media_over_five_hours_before_credentials_or_download(self):
+        self.post.duration_sec = MAX_STANDARD_DURATION_SECONDS + 1
+        with (
+            patch("social_media_toolkit.providers.volcengine._load_api_key") as load_key,
+            patch("social_media_toolkit.providers.volcengine._download_media") as download,
+        ):
+            with self.assertRaisesRegex(VolcengineASRError, "longer than 5 hours"):
+                VolcengineASR().transcribe(self.post)
+        load_key.assert_not_called()
+        download.assert_not_called()
+
+    def test_over_two_hours_routes_to_standard_asr(self):
+        self.post.duration_sec = 7201
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source.mp4"
+            audio = Path(tmpdir) / "speech.mp3"
+            source.write_bytes(b"source")
+            audio.write_bytes(b"audio")
+            with (
+                patch("social_media_toolkit.providers.volcengine._load_api_key", return_value="test-key"),
+                patch("social_media_toolkit.providers.volcengine._download_media", return_value=source),
+                patch("social_media_toolkit.providers.volcengine._prepare_audio", return_value=audio),
+                patch(
+                    "social_media_toolkit.providers.volcengine._call_volcengine_standard",
+                    return_value={"result": {"text": "standard result"}},
+                ) as standard,
+                patch("social_media_toolkit.providers.volcengine._call_volcengine") as flash,
+            ):
+                result = VolcengineASR().transcribe(self.post)
+        self.assertEqual(result, "standard result")
+        standard.assert_called_once_with(
+            audio,
+            "test-key",
+            timed=False,
+            speaker_info=False,
+            context=None,
+        )
+        flash.assert_not_called()
+
     def test_process_environment_works_without_agent_switch(self):
         with (
             patch.dict("os.environ", {VOLCENGINE_ASR_SECRET_NAME: "synthetic-public-key"}, clear=True),
@@ -287,7 +334,86 @@ class VolcengineASRTests(unittest.TestCase):
         self.assertEqual(result, "唯一火山结果")
         download.assert_called_once()
         prepare.assert_called_once()
-        call.assert_called_once_with(audio, "test-key")
+        call.assert_called_once_with(
+            audio,
+            "test-key",
+            timed=False,
+            speaker_info=False,
+            context=None,
+        )
+
+    def test_youtube_asr_uses_yt_dlp_retry_download_instead_of_signed_url_stream(self):
+        post = SocialPost(
+            platform="youtube",
+            content_type="video",
+            source_url="https://youtu.be/video123",
+            resolved_url="https://www.youtube.com/watch?v=video123",
+            page_url="https://www.youtube.com/watch?v=video123",
+            post_id="video123",
+            title="Podcast",
+            video_url="https://googlevideo.example/signed-video",
+            media={"audio_url": "https://googlevideo.example/signed-audio"},
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source.m4a"
+            audio = Path(tmpdir) / "speech.mp3"
+            source.write_bytes(b"source")
+            audio.write_bytes(b"audio")
+            with (
+                patch("social_media_toolkit.providers.volcengine._load_api_key", return_value="test-key"),
+                patch(
+                    "social_media_toolkit.providers.volcengine._download_youtube_media",
+                    return_value=source,
+                ) as youtube_download,
+                patch("social_media_toolkit.providers.volcengine._download_media") as direct_download,
+                patch("social_media_toolkit.providers.volcengine._prepare_audio", return_value=audio),
+                patch(
+                    "social_media_toolkit.providers.volcengine._call_volcengine",
+                    return_value={"result": {"text": "Podcast result"}},
+                ),
+            ):
+                result = VolcengineASR().transcribe(post)
+
+        self.assertEqual(result, "Podcast result")
+        youtube_download.assert_called_once()
+        self.assertEqual(
+            youtube_download.call_args.args[0],
+            "https://www.youtube.com/watch?v=video123",
+        )
+        direct_download.assert_not_called()
+
+    def test_youtube_temporary_download_suppresses_progress_on_json_cli_stdout(self):
+        observed = {}
+
+        class FakeYoutubeDL:
+            def __init__(self, options):
+                observed.update(options)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def extract_info(self, _url, *, download):
+                self.path = Path(observed["outtmpl"].replace("%(ext)s", "m4a"))
+                self.path.write_bytes(b"temporary audio")
+                return {"id": "video123", "ext": "m4a"}
+
+            def prepare_filename(self, _info):
+                return str(self.path)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("yt_dlp.YoutubeDL", FakeYoutubeDL):
+                result = _download_youtube_media(
+                    "https://www.youtube.com/watch?v=video123",
+                    Path(tmpdir),
+                )
+            self.assertTrue(result.is_file())
+
+        self.assertTrue(observed["quiet"])
+        self.assertTrue(observed["no_warnings"])
+        self.assertTrue(observed["noprogress"])
 
     def test_transcript_can_join_utterances(self):
         self.assertEqual(
@@ -320,6 +446,35 @@ class VolcengineASRTests(unittest.TestCase):
         ])
         self.assertEqual(result["words"][1]["start_ms"], 450)
         self.assertEqual(result["duration_ms"], 1000)
+
+    def test_timed_transcript_reads_speaker_from_utterance_additions(self):
+        result = _timed_transcript(
+            {
+                "result": {
+                    "utterances": [
+                        {
+                            "start_time": 100,
+                            "end_time": 900,
+                            "text": "Host question",
+                            "additions": {"speaker": "1"},
+                        },
+                        {
+                            "start_time": 1000,
+                            "end_time": 1900,
+                            "text": "Guest answer",
+                            "additions": {"speaker": "2"},
+                        },
+                    ]
+                }
+            },
+            duration_ms=2000,
+            require_speaker_info=True,
+        )
+        self.assertEqual(
+            [segment["speaker"] for segment in result["segments"]],
+            ["SPEAKER_01", "SPEAKER_02"],
+        )
+        self.assertEqual(result["speaker_diarization"]["speaker_count"], 2)
 
     def test_transcribe_timed_reports_temporary_media_deleted(self):
         observed = {}
@@ -375,6 +530,148 @@ class VolcengineASRTests(unittest.TestCase):
         request = open_url.call_args.args[0]
         self.assertEqual(request.headers["X-api-resource-id"], VOLCENGINE_ASR_RESOURCE_ID)
         self.assertEqual(result["result"]["text"], "ok")
+
+    def test_timed_speaker_request_uses_verified_podcast_parameters_and_context(self):
+        class FakeHTTPResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"result":{"text":"ok"}}'
+
+        context = {
+            "context_type": "dialog_ctx",
+            "context_data": [{"text": "Podcast: Example. Guest: Jane Doe."}],
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio = Path(tmpdir) / "speech.mp3"
+            audio.write_bytes(b"audio")
+            with patch("social_media_toolkit.providers.volcengine.urlopen", return_value=FakeHTTPResponse()) as open_url:
+                _call_volcengine(
+                    audio,
+                    "test-key",
+                    timed=True,
+                    speaker_info=True,
+                    context=context,
+                )
+
+        request = open_url.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))
+        options = body["request"]
+        self.assertEqual(options["model_name"], "bigmodel")
+        self.assertTrue(options["enable_itn"])
+        self.assertTrue(options["enable_punc"])
+        self.assertFalse(options["enable_ddc"])
+        self.assertTrue(options["show_utterances"])
+        self.assertTrue(options["enable_speaker_info"])
+        self.assertEqual(options["ssd_version"], "200")
+        self.assertFalse(options["enable_channel_split"])
+        self.assertEqual(json.loads(options["corpus"]["context"]), context)
+        self.assertNotIn("language", options)
+
+    def test_standard_route_deletes_temporary_tos_object_after_query(self):
+        temporary = Mock()
+        temporary.signed_url = "https://tos.example/presigned-audio"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio = Path(tmpdir) / "speech.mp3"
+            audio.write_bytes(b"audio")
+            with (
+                patch(
+                    "social_media_toolkit.providers.volcengine._upload_standard_audio",
+                    return_value=temporary,
+                ),
+                patch(
+                    "social_media_toolkit.providers.volcengine._submit_and_query_standard",
+                    return_value={"result": {"text": "done"}},
+                ) as submit_query,
+            ):
+                result = _call_volcengine_standard(
+                    audio,
+                    "test-key",
+                    timed=True,
+                    speaker_info=True,
+                    context={"context_data": [{"text": "guest"}]},
+                )
+        self.assertEqual(result["result"]["text"], "done")
+        submit_query.assert_called_once()
+        temporary.delete.assert_called_once_with()
+
+    def test_standard_route_deletes_temporary_tos_object_after_query_failure(self):
+        temporary = Mock()
+        temporary.signed_url = "https://tos.example/presigned-audio"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio = Path(tmpdir) / "speech.mp3"
+            audio.write_bytes(b"audio")
+            with (
+                patch(
+                    "social_media_toolkit.providers.volcengine._upload_standard_audio",
+                    return_value=temporary,
+                ),
+                patch(
+                    "social_media_toolkit.providers.volcengine._submit_and_query_standard",
+                    side_effect=VolcengineASRError("synthetic query failure"),
+                ),
+            ):
+                with self.assertRaisesRegex(VolcengineASRError, "synthetic query failure"):
+                    _call_volcengine_standard(audio, "test-key")
+        temporary.delete.assert_called_once_with()
+
+    def test_standard_submit_query_uses_async_endpoints_and_podcast_options(self):
+        responses = [
+            (
+                {
+                    "X-Api-Status-Code": STANDARD_SUCCESS_CODE,
+                    "X-Tt-Logid": "synthetic-log-id",
+                },
+                {},
+            ),
+            ({"X-Api-Status-Code": "20000001"}, {}),
+            (
+                {"X-Api-Status-Code": STANDARD_SUCCESS_CODE},
+                {"result": {"text": "done", "utterances": []}},
+            ),
+        ]
+        context = {"context_data": [{"text": "Podcast guest: Example"}]}
+        with (
+            patch(
+                "social_media_toolkit.providers.volcengine._post_standard_json",
+                side_effect=responses,
+            ) as post_json,
+            patch("social_media_toolkit.providers.volcengine.time.sleep") as sleep,
+        ):
+            result = _submit_and_query_standard(
+                "https://tos.example/presigned-audio",
+                "test-key",
+                timed=True,
+                speaker_info=True,
+                context=context,
+                poll_interval=1,
+                max_wait_seconds=30,
+            )
+
+        self.assertEqual(result["result"]["text"], "done")
+        self.assertEqual(post_json.call_args_list[0].args[0], VOLCENGINE_ASR_STANDARD_SUBMIT_ENDPOINT)
+        self.assertEqual(post_json.call_args_list[1].args[0], VOLCENGINE_ASR_STANDARD_QUERY_ENDPOINT)
+        submit_headers = post_json.call_args_list[0].args[1]
+        submit_body = post_json.call_args_list[0].args[2]
+        self.assertEqual(submit_headers["X-Api-Resource-Id"], VOLCENGINE_ASR_STANDARD_RESOURCE_ID)
+        self.assertEqual(submit_body["audio"]["url"], "https://tos.example/presigned-audio")
+        self.assertFalse(submit_body["request"]["enable_ddc"])
+        self.assertTrue(submit_body["request"]["enable_speaker_info"])
+        self.assertEqual(submit_body["request"]["ssd_version"], "200")
+        self.assertFalse(submit_body["request"]["enable_channel_split"])
+        self.assertEqual(
+            json.loads(submit_body["request"]["corpus"]["context"]),
+            context,
+        )
+        query_headers = post_json.call_args_list[1].args[1]
+        self.assertEqual(query_headers["X-Tt-Logid"], "synthetic-log-id")
+        sleep.assert_called_once_with(1)
 
 
 class SingleOrchestratorTests(unittest.TestCase):

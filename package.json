@@ -1,7 +1,7 @@
 {
   "name": "social-media-toolkit",
-  "version": "0.3.0",
-  "description": "One-command installer for the Social Media Toolkit Python SDK, CLI, and MCP server",
+  "version": "0.4.0",
+  "description": "One-command installer for public social-media metadata, text, timed transcripts, media, and MCP tools",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -11,8 +11,15 @@
     "bin/",
     "social_media_toolkit/**/*.py",
     "social_post_extractor_mcp/**/*.py",
+    "CHANGELOG.md",
+    "CITATION.cff",
+    "CONTRIBUTING.md",
+    "docs/",
     "LICENSE",
+    "llms.txt",
     "README.md",
+    "README.zh-CN.md",
+    "SECURITY.md",
     "pyproject.toml",
     "uv.lock"
   ],
@@ -28,6 +35,19 @@
     "url": "https://github.com/JNHFlow21/social-media-toolkit/issues"
   },
   "homepage": "https://github.com/JNHFlow21/social-media-toolkit#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "social-media",
+    "douyin",
+    "xiaohongshu",
+    "rednote",
+    "bilibili",
+    "youtube",
+    "transcript",
+    "metadata-extraction",
+    "video-downloader"
+  ],
   "engines": {
     "node": ">=18"
   },

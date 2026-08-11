@@ -21,6 +21,10 @@ from .providers.getnote import (
     GetNoteTextProvider,
 )
 from .providers.volcengine import (
+    MAX_FLASH_DURATION_SECONDS,
+    MAX_STANDARD_DURATION_SECONDS,
+    TOS_ACCESS_KEY_SECRET_NAME,
+    TOS_SECRET_KEY_SECRET_NAME,
     VOLCENGINE_ASR_DOCS_URL,
     VOLCENGINE_ASR_PRODUCT_URL,
     VOLCENGINE_ASR_RESOURCE_ID,
@@ -77,6 +81,9 @@ class SocialMediaToolkit:
         timed: bool = False,
         output_dir: Optional[str] = None,
         outputs: Sequence[str] | str = SUPPORTED_TRANSCRIPT_OUTPUTS,
+        force_asr: bool = False,
+        speaker_info: bool = False,
+        asr_context: Optional[dict[str, Any]] = None,
         _post: Optional[SocialPost] = None,
     ) -> dict[str, Any]:
         """Get canonical text, or explicitly request durable timed artifacts.
@@ -99,8 +106,21 @@ class SocialMediaToolkit:
                 url,
                 output_dir=output_dir,
                 outputs=outputs,
+                force_asr=force_asr,
+                speaker_info=speaker_info,
+                asr_context=asr_context,
                 _post=_post,
             )
+
+        if force_asr or speaker_info or asr_context:
+            return TextExtractionResult(
+                status="error",
+                provider=None,
+                text=None,
+                platform=self._infer_platform(url),
+                warnings=["ASR forcing, speaker diarization, and ASR context require timed mode"],
+                metadata={"route": "asr_options.timed_required"},
+            ).to_dict()
 
         warnings: list[str] = []
 
@@ -230,6 +250,9 @@ class SocialMediaToolkit:
         *,
         output_dir: str,
         outputs: Sequence[str] | str = SUPPORTED_TRANSCRIPT_OUTPUTS,
+        force_asr: bool = False,
+        speaker_info: bool = False,
+        asr_context: Optional[dict[str, Any]] = None,
         _post: Optional[SocialPost] = None,
     ) -> dict[str, Any]:
         """Write a YouTube transcript whose intervals map to the source video."""
@@ -255,12 +278,26 @@ class SocialMediaToolkit:
                 "metadata": {"route": "timed_transcript.unsupported_platform"},
             }
 
+        if (speaker_info or asr_context) and not force_asr:
+            return {
+                "status": "error",
+                "provider": None,
+                "platform": post.platform,
+                "post_id": post.post_id,
+                "title": post.title,
+                "warnings": ["Speaker diarization and ASR context require force_asr=True"],
+                "metadata": {"route": "timed_transcript.force_asr_required"},
+            }
+
         subtitle_meta = (post.extra or {}).get("timed_subtitle") or {}
-        segments = list(post.transcript_segments or [])
+        native_segments = list(post.transcript_segments or [])
+        segments = list(native_segments)
         words = list(post.transcript_words or [])
         warnings: list[str] = []
         temp_media_deleted = True
-        if segments:
+        speaker_diarization: dict[str, Any] | None = None
+        asr_config: dict[str, Any] | None = None
+        if segments and not force_asr:
             subtitle_source = str(subtitle_meta.get("source") or "native")
             provider = "platform_subtitle"
             route = f"youtube.{subtitle_source}_subtitle_timed"
@@ -269,7 +306,11 @@ class SocialMediaToolkit:
             temporary_media = "not_created"
         else:
             try:
-                timeline = self.asr.transcribe_timed(post)
+                timeline = self.asr.transcribe_timed(
+                    post,
+                    speaker_info=speaker_info,
+                    context=asr_context,
+                )
             except Exception as exc:
                 return {
                     "status": "error",
@@ -289,9 +330,11 @@ class SocialMediaToolkit:
             words = list(timeline.get("words") or [])
             warnings.extend(timeline.get("warnings") or [])
             provider = self.asr.provider_name
-            route = "volcengine.bigmodel_flash_timed"
+            route = str(timeline.get("route") or "volcengine.bigmodel_flash_timed")
             timing_precision = str(timeline.get("timing_precision") or "asr_utterance")
             duration_ms = int(timeline.get("duration_ms") or 0)
+            speaker_diarization = dict(timeline.get("speaker_diarization") or {})
+            asr_config = dict(timeline.get("asr_config") or {})
             temp_media_deleted = bool(timeline.get("temp_media_deleted", True))
             temporary_media = "deleted" if temp_media_deleted else "unknown"
 
@@ -308,6 +351,8 @@ class SocialMediaToolkit:
                 timing_precision=timing_precision,
                 segments=segments,
                 words=words,
+                speaker_diarization=speaker_diarization,
+                asr_config=asr_config,
             )
             artifacts = write_timed_transcript_artifacts(
                 document,
@@ -336,6 +381,8 @@ class SocialMediaToolkit:
             "timing_precision": document["timing_precision"],
             "segment_count": document["segment_count"],
             "word_count": document["word_count"],
+            "speaker_diarization": speaker_diarization,
+            "asr_config": asr_config,
             "artifacts": artifacts,
             "temporary_media": temporary_media,
             "temp_media_deleted": temp_media_deleted,
@@ -344,6 +391,9 @@ class SocialMediaToolkit:
                 "route": route,
                 "getnote_used": False,
                 "subtitle": subtitle_meta,
+                "force_asr": force_asr,
+                "native_subtitle_bypassed": bool(force_asr and native_segments),
+                "context_provided": bool(asr_context),
                 "local_fallback": False,
             },
         }
@@ -436,6 +486,9 @@ class SocialMediaToolkit:
         getnote_installed = self.getnote.available()
         getnote_authenticated = self.getnote.authenticated() if getnote_installed else False
         asr_configured = self.asr.configured()
+        standard_configured = bool(
+            getattr(self.asr, "standard_configured", lambda: False)()
+        )
         ffmpeg_installed = shutil.which("ffmpeg") is not None
         try:
             import yt_dlp  # noqa: F401
@@ -454,6 +507,11 @@ class SocialMediaToolkit:
                 f"Volcengine cloud ASR is not configured. Required secret: {VOLCENGINE_ASR_SECRET_NAME}. "
                 f"Setup: {VOLCENGINE_ASR_DOCS_URL}"
             )
+        elif not standard_configured:
+            warnings.append(
+                "Volcengine standard ASR for 2–5 hour media is not configured. "
+                f"Required secret names: {TOS_ACCESS_KEY_SECRET_NAME}, {TOS_SECRET_KEY_SECRET_NAME}."
+            )
         if not ffmpeg_installed:
             warnings.append("Install ffmpeg for temporary ASR audio and merged media downloads")
         if not yt_dlp_installed:
@@ -470,6 +528,14 @@ class SocialMediaToolkit:
             "timed_transcript": {
                 "platforms": ["youtube"],
                 "route": ["manual_subtitle_cues", "automatic_subtitle_cues", "volcengine_timed_asr"],
+                "force_asr": True,
+                "speaker_diarization": True,
+                "asr_context": True,
+                "max_flash_duration_seconds": MAX_FLASH_DURATION_SECONDS,
+                "max_standard_duration_seconds": MAX_STANDARD_DURATION_SECONDS,
+                "max_supported_duration_seconds": MAX_STANDARD_DURATION_SECONDS,
+                "standard_long_recording": standard_configured,
+                "over_limit_behavior": "reject_before_media_download",
                 "outputs": list(SUPPORTED_TRANSCRIPT_OUTPUTS),
                 "requires_output_dir": True,
                 "getnote_used": False,
@@ -490,6 +556,16 @@ class SocialMediaToolkit:
                     "docs_url": VOLCENGINE_ASR_DOCS_URL,
                     "product_url": VOLCENGINE_ASR_PRODUCT_URL,
                     "may_incur_usage_cost": True,
+                },
+                "volcengine_standard_asr": {
+                    "configured": standard_configured,
+                    "duration_seconds": {
+                        "minimum_exclusive": MAX_FLASH_DURATION_SECONDS,
+                        "maximum_inclusive": MAX_STANDARD_DURATION_SECONDS,
+                    },
+                    "temporary_storage": "volcengine_tos",
+                    "secret_names": [TOS_ACCESS_KEY_SECRET_NAME, TOS_SECRET_KEY_SECRET_NAME],
+                    "temporary_object_deleted": True,
                 },
                 "ffmpeg": {"installed": ffmpeg_installed, "free": True},
                 "yt_dlp": {"installed": yt_dlp_installed, "free": True},

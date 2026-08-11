@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible defect or public-platform breakage
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste cookies, tokens, private URLs, personal data, or private media. Report security issues through the private advisory link instead.
+  - type: input
+    id: version
+    attributes:
+      label: Toolkit version or commit
+      placeholder: v0.4.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - socialkit CLI
+        - Python SDK
+        - MCP server
+        - NPX installer
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Python, Node.js, and installation method
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Source platform
+      options:
+        - Douyin
+        - Xiaohongshu / RedNote
+        - Bilibili
+        - YouTube
+        - Not platform-specific
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Prefer a public test URL or a synthetic fixture. Remove credentials and personal data.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include sanitized error text, provenance routes, and warnings.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secret values, cookies, private URLs, account data, and private media.
+          required: true
+

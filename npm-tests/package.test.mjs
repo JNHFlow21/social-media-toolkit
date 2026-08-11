@@ -12,6 +12,10 @@ test("npm artifact contains runtime sources and no generated Python cache", () =
   const paths = artifact.files.map((item) => item.path);
   assert.ok(paths.includes("bin/social-media-toolkit.mjs"));
   assert.ok(paths.includes("pyproject.toml"));
+  assert.ok(paths.includes("README.zh-CN.md"));
+  assert.ok(paths.includes("docs/assets/social-preview.png"));
+  assert.ok(paths.includes("CHANGELOG.md"));
+  assert.ok(paths.includes("SECURITY.md"));
   assert.ok(paths.includes("social_media_toolkit/service.py"));
   assert.ok(paths.includes("social_post_extractor_mcp/server.py"));
   assert.equal(paths.some((path) => path.includes("__pycache__") || path.endsWith(".pyc")), false);

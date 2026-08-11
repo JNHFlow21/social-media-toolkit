@@ -74,13 +74,31 @@ class FakeASR:
             raise self.error
         return self.text
 
-    def transcribe_timed(self, post: SocialPost) -> dict:
+    def transcribe_timed(
+        self,
+        post: SocialPost,
+        *,
+        speaker_info: bool = False,
+        context: dict | None = None,
+    ) -> dict:
         self.calls.append(post)
         if self.error:
             raise self.error
-        return self.timed_result
+        result = dict(self.timed_result)
+        result.setdefault(
+            "speaker_diarization",
+            {"enabled": speaker_info, "speaker_count": 0, "speaker_labels": []},
+        )
+        result.setdefault(
+            "asr_config",
+            {"enable_speaker_info": speaker_info, "context_provided": bool(context)},
+        )
+        return result
 
     def configured(self) -> bool:
+        return self._configured
+
+    def standard_configured(self) -> bool:
         return self._configured
 
 
@@ -387,6 +405,121 @@ class TextPipelineTests(unittest.TestCase):
         self.assertEqual(getnote.calls, [])
         self.assertEqual(len(asr.calls), 1)
 
+    def test_force_asr_bypasses_youtube_captions_and_preserves_speakers(self):
+        post = make_video_post(platform="youtube")
+        post.post_id = "speaker123"
+        post.page_url = "https://www.youtube.com/watch?v=speaker123"
+        post.transcript_segments = [
+            {"start_ms": 0, "end_ms": 1000, "text": "Native caption must be bypassed."}
+        ]
+        post.extra["timed_subtitle"] = {"source": "manual", "timing_precision": "caption_cue"}
+        timed_result = {
+            "text": "Host question. Guest answer.",
+            "duration_ms": 4000,
+            "timing_precision": "asr_word",
+            "segments": [
+                {"start_ms": 100, "end_ms": 1200, "speaker": "SPEAKER_01", "text": "Host question."},
+                {"start_ms": 1400, "end_ms": 3800, "speaker": "SPEAKER_02", "text": "Guest answer."},
+            ],
+            "words": [],
+            "warnings": [],
+            "speaker_diarization": {
+                "enabled": True,
+                "speaker_count": 2,
+                "speaker_labels": ["SPEAKER_01", "SPEAKER_02"],
+            },
+            "asr_config": {
+                "enable_speaker_info": True,
+                "enable_ddc": False,
+                "context_provided": True,
+            },
+            "temp_media_deleted": True,
+        }
+        asr = FakeASR(timed_result=timed_result)
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(post),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            asr=asr,
+            downloader=FakeDownloader(),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = toolkit.get_text(
+                post.page_url,
+                timed=True,
+                output_dir=tmpdir,
+                outputs="md,srt,json",
+                force_asr=True,
+                speaker_info=True,
+                asr_context={"context_type": "dialog_ctx", "context_data": [{"text": "Guest: Example"}]},
+            )
+            artifacts = {item["kind"]: Path(item["path"]) for item in result["artifacts"]}
+            timeline = json.loads(artifacts["json"].read_text(encoding="utf-8"))
+            markdown = artifacts["md"].read_text(encoding="utf-8")
+            srt = artifacts["srt"].read_text(encoding="utf-8")
+
+        self.assertEqual(result["provider"], "volcengine_bigmodel")
+        self.assertEqual(result["metadata"]["route"], "volcengine.bigmodel_flash_timed")
+        self.assertTrue(result["metadata"]["native_subtitle_bypassed"])
+        self.assertEqual(timeline["segments"][1]["speaker"], "SPEAKER_02")
+        self.assertEqual(timeline["speaker_diarization"]["speaker_count"], 2)
+        self.assertIn("SPEAKER_01｜Host question.", markdown)
+        self.assertNotIn("SPEAKER_01", srt)
+        self.assertNotIn("Native caption", srt)
+
+    def test_standard_asr_route_is_preserved_in_result_and_timeline(self):
+        post = make_video_post(platform="youtube")
+        post.post_id = "long123"
+        post.page_url = "https://www.youtube.com/watch?v=long123"
+        post.duration_sec = 7201
+        timed_result = {
+            "text": "Long-form answer.",
+            "duration_ms": 7_201_000,
+            "timing_precision": "asr_utterance",
+            "segments": [
+                {
+                    "start_ms": 0,
+                    "end_ms": 7_201_000,
+                    "speaker": "SPEAKER_01",
+                    "text": "Long-form answer.",
+                }
+            ],
+            "words": [],
+            "warnings": [],
+            "route": "volcengine.bigmodel_standard_timed",
+            "speaker_diarization": {
+                "enabled": True,
+                "speaker_count": 1,
+                "speaker_labels": ["SPEAKER_01"],
+            },
+            "asr_config": {
+                "enable_speaker_info": True,
+                "recognition_mode": "standard",
+                "context_provided": True,
+            },
+            "temp_media_deleted": True,
+        }
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(post),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            asr=FakeASR(timed_result=timed_result),
+            downloader=FakeDownloader(),
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = toolkit.get_text(
+                post.page_url,
+                timed=True,
+                output_dir=tmpdir,
+                outputs="json",
+                force_asr=True,
+                speaker_info=True,
+                asr_context={"context_data": [{"text": "guest"}]},
+            )
+            timeline = json.loads(Path(result["artifacts"][0]["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(result["metadata"]["route"], "volcengine.bigmodel_standard_timed")
+        self.assertEqual(timeline["route"], "volcengine.bigmodel_standard_timed")
+        self.assertEqual(result["asr_config"]["recognition_mode"], "standard")
+
     def test_timed_mode_requires_an_explicit_output_directory(self):
         toolkit = SocialMediaToolkit(
             router=FakeRouter(make_video_post(platform="youtube")),
@@ -518,6 +651,14 @@ class SubtitleTests(unittest.TestCase):
         segments = _parse_timed_subtitle_payload(payload, "json3")
         self.assertEqual(segments[0]["end_ms"], 3000)
         self.assertEqual(segments[1]["end_ms"], 6000)
+
+    def test_youtube_xml_subtitles_reject_external_entities(self):
+        payload = (
+            '<!DOCTYPE tt [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+            "<tt><p begin=\"0s\" end=\"1s\">&xxe;</p></tt>"
+        )
+        self.assertEqual(_parse_subtitle_payload(payload, "ttml"), "")
+        self.assertEqual(_parse_timed_subtitle_payload(payload, "ttml"), [])
 
     def test_youtube_timed_subtitles_prefer_the_original_language_track(self):
         tracks = {

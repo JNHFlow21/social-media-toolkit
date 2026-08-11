@@ -5,4 +5,4 @@ from .service import SocialMediaToolkit
 
 __all__ = ["PostBundle", "SocialMediaToolkit", "TextExtractionResult"]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

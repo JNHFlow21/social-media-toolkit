@@ -5,9 +5,10 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
-from xml.etree import ElementTree
 
 import requests
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from .core import HEADERS, PlatformAdapter, SocialPost, _normalize_media_url
 from ..transcripts import normalize_segments
@@ -299,7 +300,7 @@ def _parse_subtitle_payload(payload: str, extension: str) -> str:
     if extension in {"ttml", "srv3"}:
         try:
             root = ElementTree.fromstring(payload)
-        except ElementTree.ParseError:
+        except (ElementTree.ParseError, DefusedXmlException):
             return ""
         lines = ["".join(element.itertext()).strip() for element in root.iter() if element.tag.rsplit("}", 1)[-1] in {"p", "text"}]
         return _dedupe_lines(lines)
@@ -350,7 +351,7 @@ def _parse_timed_subtitle_payload(payload: str, extension: str) -> list[dict[str
     if extension in {"ttml", "srv3"}:
         try:
             root = ElementTree.fromstring(payload)
-        except ElementTree.ParseError:
+        except (ElementTree.ParseError, DefusedXmlException):
             return []
         segments = []
         for element in root.iter():

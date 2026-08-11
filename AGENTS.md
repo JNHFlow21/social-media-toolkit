@@ -14,7 +14,7 @@ This repository is a public, reusable product. It must not depend on the Brain v
 ## Invariants
 
 1. Plain canonical-text precedence is GetNote original content → native platform subtitle → Volcengine cloud ASR.
-2. Timed YouTube transcripts are a separate evidence contract: manual subtitle cues → automatic subtitle cues → timestamped Volcengine cloud ASR. Non-timestamped GetNote text must not short-circuit this route.
+2. Timed YouTube transcripts are a separate evidence contract: manual subtitle cues → automatic subtitle cues → timestamped Volcengine cloud ASR. Callers may explicitly force Volcengine ASR, optionally with anonymous speaker diarization and bounded public-metadata context; that mode must bypass native captions. Non-timestamped GetNote text must not short-circuit either route.
 3. Non-empty GetNote original content wins even when a task still contains a stale error message on the plain canonical-text route.
 4. `inspect` and plain `text` do not download persistent media. Timed text requires an explicit output directory and may write only requested transcript artifacts; media remains temporary. Downloads require an explicit output directory.
 5. Every normalized result preserves provenance, warnings, and platform limitations.
