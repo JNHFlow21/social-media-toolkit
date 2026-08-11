@@ -80,3 +80,12 @@ Keep pull requests narrow and include:
 Maintainers may request changes when a claim exceeds available evidence or a
 new path depends on machine-local state.
 
+## Repository Pulse maintenance
+
+Stars, forks, and commit count refresh with the standard GitHub Actions token.
+GitHub restricts clone and visitor Traffic endpoints to repository
+Administration read access. To refresh those owner-only aggregates on schedule,
+set the Actions secret `REPOSITORY_METRICS_TOKEN` to a fine-grained token that
+is limited to this repository and grants only **Administration: read**. If the
+secret is absent, the workflow keeps the checked-in, dated aggregate snapshot;
+it never fabricates traffic or exposes referrers, paths, or visitor identities.
