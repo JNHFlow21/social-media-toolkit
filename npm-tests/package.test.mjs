@@ -5,6 +5,7 @@ import test from "node:test";
 test("npm artifact contains runtime sources and no generated Python cache", () => {
   const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
     encoding: "utf8",
+    shell: process.platform === "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   assert.equal(result.status, 0, result.stderr);

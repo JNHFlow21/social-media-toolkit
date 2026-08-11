@@ -221,7 +221,9 @@ def srt_time(milliseconds: int) -> str:
 def _atomic_write_text(path: Path, payload: str) -> None:
     staged = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        staged.write_text(payload, encoding="utf-8")
+        # Write exact UTF-8 bytes so checksums and artifacts stay identical on
+        # Windows, macOS, and Linux instead of inheriting platform newlines.
+        staged.write_bytes(payload.encode("utf-8"))
         staged.replace(path)
     finally:
         staged.unlink(missing_ok=True)
