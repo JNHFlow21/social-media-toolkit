@@ -24,7 +24,7 @@
     "uv.lock"
   ],
   "scripts": {
-    "test": "node --test npm-tests/*.test.mjs",
+    "test": "node --test npm-tests/installer.test.mjs npm-tests/package.test.mjs",
     "pack:check": "npm pack --dry-run"
   },
   "repository": {

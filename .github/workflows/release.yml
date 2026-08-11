@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - uses: astral-sh/setup-uv@v9
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -57,4 +57,3 @@ jobs:
             --verify-tag \
             --title "Social Media Toolkit $GITHUB_REF_NAME" \
             --generate-notes
-
