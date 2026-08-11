@@ -41,8 +41,8 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "defusedxml>=0.7.1",
-    "mcp>=1.0.0",
-    "requests",
+    "mcp>=1.28.1",
+    "requests>=2.33.0",
     "tos>=2.8.6",
     "yt-dlp[default]>=2026.7.4",
 ]

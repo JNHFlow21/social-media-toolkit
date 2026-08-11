@@ -48,6 +48,7 @@ No unreleased changes yet.
   contributor and security policies, issue/PR templates, dependency updates,
   and versioned GitHub Release artifacts with SHA-256 checksums.
 - Hardened XML subtitle parsing against entity-expansion and external-entity payloads.
+- Refreshed the locked dependency graph to patched MCP, HTTP, and parser releases.
 
 ## 0.3.0 - 2026-07-13
 
