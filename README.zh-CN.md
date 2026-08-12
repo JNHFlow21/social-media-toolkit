@@ -331,8 +331,6 @@ git diff --check
 
 [![JNHFlow21/social-media-toolkit 仓库动态](https://raw.githubusercontent.com/JNHFlow21/social-media-toolkit/metrics/repository-metrics.svg)](https://github.com/JNHFlow21/social-media-toolkit)
 
-GitHub Traffic 数据是带日期的滚动 14 天仓库所有者快照；公开的 Star、Fork 与提交数会自动刷新。克隆量和访客数不能证明安装成功或持续使用。
-
 ## 贡献、支持与许可证
 
 欢迎通过 [GitHub Issues](https://github.com/JNHFlow21/social-media-toolkit/issues) 报告 Bug 或提出范围明确的功能建议。提交 Pull Request 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；发现安全问题时，请使用 [GitHub 私密漏洞报告](https://github.com/JNHFlow21/social-media-toolkit/security/advisories/new)。
