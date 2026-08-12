@@ -331,8 +331,6 @@ Tests use synthetic fixtures and must not contain real cookies, tokens, private 
 
 [![Repository Pulse for JNHFlow21/social-media-toolkit](https://raw.githubusercontent.com/JNHFlow21/social-media-toolkit/metrics/repository-metrics.svg)](https://github.com/JNHFlow21/social-media-toolkit)
 
-GitHub Traffic values are a dated rolling 14-day owner snapshot; public stars, forks, and commits refresh automatically. Clone and visitor counts are not proof of successful installation or retained use.
-
 ## Contributing, support, and license
 
 Bug reports and focused feature proposals are welcome through [GitHub Issues](https://github.com/JNHFlow21/social-media-toolkit/issues). Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and use [GitHub's private vulnerability reporting](https://github.com/JNHFlow21/social-media-toolkit/security/advisories/new) for security issues.
