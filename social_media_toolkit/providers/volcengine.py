@@ -49,6 +49,7 @@ TOS_SECRET_KEY_SECRET_NAME = "TOS_SECRET_KEY"
 TOS_CONFIG_PATH_ENV = "SOCIAL_MEDIA_TOOLKIT_CONFIG"
 DEFAULT_TOS_CONFIG_PATH = Path.home() / ".config" / "social-media-toolkit" / "config.json"
 MAX_TEMP_MEDIA_BYTES = 2 * 1024 * 1024 * 1024
+MEDIA_DOWNLOAD_MAX_ATTEMPTS = 3
 MAX_FLASH_DURATION_SECONDS = 2 * 60 * 60
 MAX_STANDARD_DURATION_SECONDS = 5 * 60 * 60
 STANDARD_PROCESSING_CODES = {"20000001", "20000002"}
@@ -252,31 +253,62 @@ def _download_media(url: str, temp_dir: Path, *, referer: str | None) -> Path:
     if referer:
         headers["Referer"] = referer
 
-    try:
-        response = requests.get(url, headers=headers, timeout=120, stream=True, allow_redirects=True)
-        response.raise_for_status()
-        expected = _as_int(response.headers.get("Content-Length"))
-        if expected > MAX_TEMP_MEDIA_BYTES:
-            raise VolcengineASRError("Remote media exceeds the 2 GB temporary-ASR limit")
-        written = 0
-        with destination.open("wb") as file:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if not chunk:
-                    continue
-                written += len(chunk)
-                if written > MAX_TEMP_MEDIA_BYTES:
-                    raise VolcengineASRError("Remote media exceeds the 2 GB temporary-ASR limit")
-                file.write(chunk)
-    except Exception:
-        destination.unlink(missing_ok=True)
-        raise
-    finally:
-        if "response" in locals():
-            response.close()
+    last_error: Exception | None = None
+    for attempt in range(1, MEDIA_DOWNLOAD_MAX_ATTEMPTS + 1):
+        existing = destination.stat().st_size if destination.exists() else 0
+        request_headers = dict(headers)
+        if existing:
+            request_headers["Range"] = f"bytes={existing}-"
+        response = None
+        try:
+            response = requests.get(
+                url,
+                headers=request_headers,
+                timeout=120,
+                stream=True,
+                allow_redirects=True,
+            )
+            response.raise_for_status()
+            resume_accepted = bool(existing and response.status_code == 206)
+            if not resume_accepted:
+                existing = 0
+            expected_chunk = _as_int(response.headers.get("Content-Length"))
+            expected_total = existing + expected_chunk if expected_chunk else 0
+            if expected_total > MAX_TEMP_MEDIA_BYTES:
+                raise VolcengineASRError("Remote media exceeds the 2 GB temporary-ASR limit")
 
-    if not destination.exists() or destination.stat().st_size == 0:
-        raise VolcengineASRError("Downloaded media is empty")
-    return destination
+            written = existing
+            with destination.open("ab" if resume_accepted else "wb") as file:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    written += len(chunk)
+                    if written > MAX_TEMP_MEDIA_BYTES:
+                        raise VolcengineASRError("Remote media exceeds the 2 GB temporary-ASR limit")
+                    file.write(chunk)
+            if expected_total and written < expected_total:
+                raise VolcengineASRError(
+                    f"Temporary media download ended early ({written}/{expected_total} bytes)"
+                )
+            if written <= 0:
+                raise VolcengineASRError("Downloaded media is empty")
+            return destination
+        except Exception as exc:
+            last_error = exc
+            if isinstance(exc, VolcengineASRError) and "2 GB" in str(exc):
+                destination.unlink(missing_ok=True)
+                raise
+            if attempt >= MEDIA_DOWNLOAD_MAX_ATTEMPTS:
+                destination.unlink(missing_ok=True)
+                raise VolcengineASRError(
+                    f"Temporary media download failed after {attempt} attempts: {exc}"
+                ) from exc
+        finally:
+            if response is not None:
+                response.close()
+
+    destination.unlink(missing_ok=True)
+    raise VolcengineASRError(f"Temporary media download failed: {last_error}")
 
 
 def _download_youtube_media(url: str, temp_dir: Path) -> Path:

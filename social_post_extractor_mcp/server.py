@@ -135,8 +135,11 @@ Only six tools are supported:
 
 Text always follows one route:
 1. GetNote original content
-2. Native Bilibili/YouTube subtitle when available
-3. Volcengine cloud ASR using `VOLCENGINE_ASR_API_KEY`
+2. Free public platform parsing
+3. Optional paid TikHub media fallback for Douyin parsing failures when
+   `TIKHUB_API_KEY` is configured
+4. Native Bilibili/YouTube subtitle when available
+5. Volcengine cloud ASR using `VOLCENGINE_ASR_API_KEY`
 
 For a YouTube evidence transcript, call `social_get_text` with `timed=true`
 and an absolute `output_dir`. This skips non-timestamped GetNote text, preserves

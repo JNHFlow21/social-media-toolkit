@@ -66,6 +66,7 @@ class PostBundle:
     def from_social_post(cls, social_post: Any) -> "PostBundle":
         published_at_epoch = epoch_to_seconds(social_post.publish_time)
         media = social_post.media or {}
+        extra = social_post.extra or {}
         video_url = media.get("video_url") or social_post.video_url
         cover_url = media.get("cover_url") or social_post.cover_url
         image_urls = list(media.get("image_urls") or social_post.image_urls or [])
@@ -92,7 +93,7 @@ class PostBundle:
                 "page_url": social_post.page_url,
                 "post_id": social_post.post_id,
                 "retrieved_at": utc_now_iso(),
-                "platform_data": dict(social_post.extra or {}),
+                "platform_data": dict(extra),
             },
             post={
                 "title": social_post.title,
@@ -113,7 +114,7 @@ class PostBundle:
             content={
                 "canonical_text": None,
                 "text_provider": None,
-                "native_subtitle": (social_post.extra or {}).get("subtitle_text"),
+                "native_subtitle": extra.get("subtitle_text"),
                 "transcript": None,
             },
             comments={
@@ -123,8 +124,15 @@ class PostBundle:
             },
             provenance={
                 "quality": "metadata_only",
-                "routes": [f"platform:{social_post.platform}"],
-                "warnings": [],
+                "routes": [
+                    f"platform:{social_post.platform}",
+                    *(
+                        [f"metadata:{extra['metadata_route']}"]
+                        if extra.get("metadata_route")
+                        else []
+                    ),
+                ],
+                "warnings": list(extra.get("warnings") or []),
             },
         )
 

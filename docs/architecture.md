@@ -12,6 +12,8 @@ flowchart LR
     U["URL or share text"] --> S["SocialMediaToolkit"]
     S --> R["PlatformRouter"]
     R --> P["Public platform adapter"]
+    P -->|"Douyin failure + key"| H["Optional TikHub media fallback"]
+    H --> B
     P --> B["PostBundle"]
     S --> T["One text route"]
     T --> G["GetNote original content"]
@@ -37,6 +39,7 @@ flowchart LR
 - `platforms/core.py`: public models, Douyin/Xiaohongshu/Bilibili adapters, and router.
 - `platforms/youtube.py`: YouTube metadata and native subtitles through `yt-dlp`.
 - `providers/getnote.py`: GetNote original-content reader.
+- `providers/tikhub.py`: optional paid Douyin metadata/CDN media fallback.
 - `providers/volcengine.py`: the only cloud ASR implementation.
 - `transcripts.py`: timestamp normalization plus atomic MD/SRT/JSON rendering.
 - `downloader.py`: explicit downloads and SHA-256 manifests.
@@ -45,7 +48,9 @@ flowchart LR
 ### `social_post_extractor_mcp`
 
 A thin stdio MCP transport. It owns no alternate extraction logic and creates
-exactly one `SocialMediaToolkit` instance.
+exactly one `SocialMediaToolkit` instance. The current transport is built on
+the v1 `FastMCP` API and therefore constrains the dependency to
+`mcp>=1.28.1,<2`; MCP 2.x requires an explicit transport migration.
 
 ### npm bootstrap
 
@@ -58,11 +63,13 @@ environment. It contains no extraction, provider, MCP, or credential logic.
 
 1. Ask GetNote for original content.
 2. If unavailable, parse the platform.
-3. Use native Bilibili/YouTube subtitles when present.
-4. For a video still without text, route by duration: flash ASR through two
+3. If free Douyin parsing fails and `TIKHUB_API_KEY` is configured, call the
+   TikHub Web share-URL endpoint once and record its paid, ephemeral-media route.
+4. Use native Bilibili/YouTube subtitles when present.
+5. For a video still without text, route by duration: flash ASR through two
    hours, standard asynchronous ASR from over two through five hours, and
    reject longer media before download.
-5. If Volcengine fails, return the reason and stop.
+6. If Volcengine fails, return the reason and stop.
 
 There is no provider selector, local ASR, image OCR, LLM cleanup, or silent
 fallback.
@@ -108,10 +115,18 @@ backward compatible.
 - `npx` installer: may install official `uv`, create an isolated `uv tool`
   environment, install command shims, and update the user's future shell
   `PATH`; it never reads provider credentials.
-- `inspect`: public network reads only.
-- `get_text`: by default runs configured GetNote, then native subtitles, then possibly paid Volcengine ASR; timed mode instead writes explicitly requested transcript artifacts and never persists media. Forced timed ASR may add anonymous speaker labels and public-metadata context.
-- `get_comments`: public network reads only.
-- `download`: persistent writes and always requires `output_dir`.
+- `inspect`: public network reads only; when the free Douyin adapter fails and
+  TikHub is configured, it may make one paid TikHub request and returns an
+  explicit cost/ephemeral-URL warning.
+- `get_text`: by default runs configured GetNote, then free platform parsing,
+  optional paid TikHub media resolution for Douyin failures, native subtitles,
+  and possibly paid Volcengine ASR; timed mode instead writes explicitly
+  requested transcript artifacts and never persists media. Forced timed ASR
+  may add anonymous speaker labels and public-metadata context.
+- `get_comments`: public network reads only; resolving Douyin metadata may use
+  the same optional paid TikHub fallback and must disclose it.
+- `download`: persistent writes and always requires `output_dir`; resolving a
+  failed Douyin public page may first use the optional paid TikHub fallback.
 - `capture`: media writes only when `output_dir` is supplied.
 
 ASR media and extracted MP3 files live only inside a temporary directory and
@@ -125,9 +140,12 @@ side-effect-free behavior is required.
 ## Security
 
 - Flash ASR secret name: `VOLCENGINE_ASR_API_KEY`.
+- Optional TikHub Douyin fallback secret name: `TIKHUB_API_KEY`.
 - Standard 2–5 hour ASR also needs `TOS_ACCESS_KEY` and `TOS_SECRET_KEY`, plus
   non-sensitive bucket, region, and endpoint settings.
 - Secret values never appear in results or logs.
+- TikHub CDN URLs are treated as expiring transport inputs, not durable media
+  identities; the toolkit itself does not persist them.
 - The project does not load repository `.env` files.
 - Standard process environment is the portable public configuration path.
 - Agent Switch is an optional maintainer-only fallback, used through an

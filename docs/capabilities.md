@@ -6,6 +6,7 @@
 | Post / author metadata | ✅ | ✅ | ✅ | ✅ |
 | Public metrics | ✅ | ✅ | ✅ | ✅ when exposed |
 | GetNote original content | ✅ | ✅ | ✅ | ✅ |
+| Optional TikHub media fallback | ✅ after free parser failure | — | — | — |
 | Native subtitles | — | — | ✅ when exposed | ✅ manual, then automatic |
 | Timed transcript artifacts | — | — | — | ✅ MD/SRT/JSON; default caption-first or forced ASR + anonymous speakers/context |
 | Volcengine cloud ASR | ✅ video | ✅ video | ✅ | ✅ |
@@ -18,7 +19,9 @@
 
 | Dependency | Used for | Cost |
 |---|---|---|
+| `mcp>=1.28.1,<2` | Current v1 FastMCP stdio server | Free/open source; MCP 2.x requires a separate migration |
 | GetNote CLI | First text route | CLI is open source; service OpenAPI may require membership |
+| `TIKHUB_API_KEY` | Optional Douyin metadata/CDN fallback after free parsing fails | TikHub requests may incur charges |
 | `VOLCENGINE_ASR_API_KEY` | Video without usable text/subtitles, or explicit forced ASR | May incur Volcengine usage charges |
 | TOS credentials/config | Temporary private audio URL for standard ASR on 2–5 hour media | May incur TOS storage/traffic charges |
 | ffmpeg | Temporary ASR audio; stream merge | Free/open source |
@@ -31,6 +34,8 @@
   it does not paginate or backfill. Replies are counted but reply bodies are
   not fetched.
 - Platform pages and public endpoints can change.
+- TikHub is optional and paid. Its Douyin CDN URLs are temporary and must not be
+  treated as durable asset URLs; the toolkit records the route and cost warning.
 - Native subtitles are not guaranteed for a particular video.
 - Timed transcript mode currently supports one YouTube video URL at a time and
   requires an explicit output directory. GetNote is intentionally skipped

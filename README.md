@@ -94,13 +94,16 @@ The command returns a normalized, provenance-bearing bundle:
 ```
 
 The example is synthetic. Real fields depend on what the public source exposes.
+If the free Douyin parser fails and `TIKHUB_API_KEY` is configured, `inspect`
+automatically uses the paid TikHub fallback and records that route plus the
+ephemeral-media warning in provenance.
 
 ## What it can do
 
 | Outcome | Interface | Requirements | Possible cost |
 |---|---|---|---:|
-| Normalize public metadata | SDK / CLI / MCP | Python dependencies; YouTube uses `yt-dlp` | No |
-| Get readable text | GetNote → native subtitle/body → Volcengine ASR | Depends on the selected route | GetNote membership or Volcengine ASR may cost money |
+| Normalize public metadata | SDK / CLI / MCP | Python dependencies; YouTube uses `yt-dlp` | Free by default; optional TikHub Douyin fallback may cost money |
+| Get readable text | GetNote → public parser / optional TikHub media → native subtitle/body → Volcengine ASR | Depends on the selected route | GetNote, TikHub, or Volcengine may cost money |
 | Create timed YouTube transcripts | Manual cues → automatic cues → timed Volcengine ASR | `yt-dlp`; ASR also needs `ffmpeg` and credentials | ASR/TOS may cost money |
 | Download video, cover, or images | Explicit `download` / `capture` request | An explicit output directory | Toolkit is free |
 | Sample public comments | Douyin top-level public sample | No cookies or account | No |
@@ -110,7 +113,7 @@ The example is synthetic. Real fields depend on what the public source exposes.
 
 | Platform | Metadata | Text | Video | Cover / images | Public comments |
 |---|---:|---:|---:|---:|---:|
-| Douyin | ✅ | GetNote → Volcengine ASR | ✅ | ✅, including public image posts | ✅ bounded top-level sample |
+| Douyin | ✅; optional TikHub fallback | GetNote → public/TikHub media → Volcengine ASR | ✅ | ✅, including public image posts | ✅ bounded top-level sample |
 | Xiaohongshu / RedNote | ✅ | GetNote → post body / Volcengine ASR | ✅ | ✅ | — |
 | Bilibili | ✅ | GetNote → native subtitle → Volcengine ASR | ✅ | ✅ | — |
 | YouTube | ✅ | GetNote → manual subtitle → automatic subtitle → Volcengine ASR | ✅ | ✅ | — |
@@ -124,7 +127,10 @@ The normal readable-text route has one deterministic order:
 ```mermaid
 flowchart LR
     U["Public link"] --> G["GetNote original content"]
-    G -->|"no usable text"| N["Native subtitle or post body"]
+    G -->|"no usable text"| P["Free public platform parser"]
+    P -->|"Douyin parse failure + key"| H["Optional TikHub media fallback"]
+    P --> N["Native subtitle or post body"]
+    H --> N
     N -->|"video still has no text"| V["Volcengine cloud ASR"]
     V -->|"failure"| E["Explicit error"]
 ```
@@ -161,6 +167,25 @@ getnote auth login
 ```
 
 GetNote manages its own credentials. Its service may require a paid membership. Calling `text`, a text-enabled `capture`, or a full-chain smoke test is the execution signal for the documented route and can save the URL to the user's GetNote account.
+
+### Optional TikHub fallback for Douyin
+
+Secret name:
+
+```text
+TIKHUB_API_KEY
+```
+
+The toolkit always tries the free public Douyin adapter first. Only when that
+adapter fails and this secret is configured does the single orchestrator call
+TikHub's Web share-URL endpoint. TikHub supplies normalized public metadata and
+temporary CDN media URLs; it is not a text or ASR provider. Requests may incur
+TikHub charges, and returned CDN URLs can expire. The route, cost warning, and
+ephemeral-URL status are preserved in every result.
+
+Get a key and API documentation from [TikHub](https://docs.tikhub.io/257556744e0),
+then inject it through the process environment, MCP client, or another secret
+manager. Never write it to a project `.env` file.
 
 ### Volcengine ASR and TOS
 
@@ -203,7 +228,7 @@ The repository never stores secret values. Agent Switch is an optional maintaine
 # Metadata only: no persistent write, GetNote, or ASR
 socialkit inspect "SHARE_URL"
 
-# Readable canonical text; may use GetNote or paid ASR
+# Readable canonical text; may use GetNote, paid TikHub media, or paid ASR
 socialkit text "SHARE_URL"
 
 # Timed YouTube transcript artifacts
@@ -252,6 +277,11 @@ The SDK, CLI, and MCP server use the same `SocialMediaToolkit` orchestrator and 
 
 ## MCP server
 
+Release 0.4.1 intentionally constrains the Python MCP SDK to
+`mcp>=1.28.1,<2`: this transport still uses the v1 `FastMCP` API. MCP 2.x
+renamed and changed that server API, so a future v2 migration will be handled
+as a separate compatibility change instead of breaking fresh installs.
+
 Start the stdio server:
 
 ```bash
@@ -290,7 +320,7 @@ Do not place secrets in this JSON. Use the client's secret store or secure proce
 | Persistent writes | Only explicit output directories and the optional user config file |
 | Temporary data | ASR media and standard-route TOS objects are deleted before return |
 | Telemetry | No product telemetry |
-| Network | Public platform/GetNote reads and optional Volcengine/TOS calls |
+| Network | Public platform/GetNote reads and optional TikHub/Volcengine/TOS calls |
 | Publishing | Uploading or publishing to social accounts is intentionally out of scope |
 | Legal | Users remain responsible for platform terms, copyright, and local law |
 
