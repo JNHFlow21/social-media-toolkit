@@ -20,6 +20,11 @@ from .providers.getnote import (
     GETNOTE_INSTALL_HINT,
     GetNoteTextProvider,
 )
+from .providers.tikhub import (
+    TIKHUB_API_KEY_SECRET_NAME,
+    TIKHUB_DOUYIN_DOCS_URL,
+    TikHubDouyinMediaProvider,
+)
 from .providers.volcengine import (
     MAX_FLASH_DURATION_SECONDS,
     MAX_STANDARD_DURATION_SECONDS,
@@ -43,10 +48,12 @@ class SocialMediaToolkit:
 
     Plain canonical text follows this contract:
 
-    ``GetNote original content -> native subtitle -> Volcengine cloud ASR``.
+    ``GetNote original content -> public platform (optional TikHub media for a
+    Douyin parse failure) -> native subtitle -> Volcengine cloud ASR``.
 
     Timed YouTube evidence follows manual cues -> automatic cues -> timestamped
-    Volcengine ASR. There is no provider selector, local ASR, OCR, cleanup
+    Volcengine ASR. TikHub resolves temporary Douyin media only; it is not a
+    text/ASR provider. There is no provider selector, local ASR, OCR, cleanup
     model, browser path, or implicit persistent media download.
     """
 
@@ -55,6 +62,7 @@ class SocialMediaToolkit:
         *,
         router: Optional[PlatformRouter] = None,
         getnote: Optional[GetNoteTextProvider] = None,
+        tikhub: Optional[TikHubDouyinMediaProvider] = None,
         asr: Optional[VolcengineASR] = None,
         downloader: Optional[MediaDownloader] = None,
     ) -> None:
@@ -67,12 +75,13 @@ class SocialMediaToolkit:
             ]
         )
         self.getnote = getnote or GetNoteTextProvider()
+        self.tikhub = tikhub or TikHubDouyinMediaProvider()
         self.asr = asr or VolcengineASR()
         self.downloader = downloader or MediaDownloader()
 
     def inspect(self, url: str) -> dict[str, Any]:
         """Return a normalized PostBundle without downloading media or running ASR."""
-        return PostBundle.from_social_post(self.router.parse(url)).to_dict()
+        return PostBundle.from_social_post(self._parse_post(url)).to_dict()
 
     def get_text(
         self,
@@ -147,7 +156,7 @@ class SocialMediaToolkit:
             warnings.extend(getnote_result.warnings)
 
         try:
-            post = _post or self.router.parse(url)
+            post = _post or self._parse_post(url)
         except Exception as exc:
             return TextExtractionResult(
                 status="error",
@@ -157,6 +166,7 @@ class SocialMediaToolkit:
                 warnings=_dedupe(warnings + [f"Platform extraction failed: {exc}"]),
                 metadata={"route": "platform_extraction_failed"},
             ).to_dict()
+        warnings.extend((post.extra or {}).get("warnings") or [])
 
         native_subtitle = (post.extra or {}).get("subtitle_text")
         if isinstance(native_subtitle, str) and native_subtitle.strip():
@@ -171,6 +181,7 @@ class SocialMediaToolkit:
                 metadata={
                     "route": f"{post.platform}.native_subtitle",
                     "subtitle": (post.extra or {}).get("subtitle") or {},
+                    **self._post_route_metadata(post),
                 },
             ).to_dict()
 
@@ -185,7 +196,10 @@ class SocialMediaToolkit:
                     post_id=post.post_id,
                     title=post.title,
                     warnings=_dedupe(warnings),
-                    metadata={"route": f"{post.platform}.body"},
+                    metadata={
+                        "route": f"{post.platform}.body",
+                        **self._post_route_metadata(post),
+                    },
                 ).to_dict()
             return TextExtractionResult(
                 status="error",
@@ -214,6 +228,7 @@ class SocialMediaToolkit:
                     "secret_name": VOLCENGINE_ASR_SECRET_NAME,
                     "docs_url": VOLCENGINE_ASR_DOCS_URL,
                     "local_fallback": False,
+                    **self._post_route_metadata(post),
                 },
             ).to_dict()
 
@@ -226,7 +241,11 @@ class SocialMediaToolkit:
                 post_id=post.post_id,
                 title=post.title,
                 warnings=_dedupe(warnings + ["Volcengine cloud ASR returned empty text"]),
-                metadata={"route": "volcengine.cloud_asr_empty", "local_fallback": False},
+                metadata={
+                    "route": "volcengine.cloud_asr_empty",
+                    "local_fallback": False,
+                    **self._post_route_metadata(post),
+                },
             ).to_dict()
 
         return TextExtractionResult(
@@ -241,6 +260,7 @@ class SocialMediaToolkit:
                 "route": "volcengine.bigmodel_flash",
                 "resource_id": VOLCENGINE_ASR_RESOURCE_ID,
                 "local_fallback": False,
+                **self._post_route_metadata(post),
             },
         ).to_dict()
 
@@ -257,7 +277,7 @@ class SocialMediaToolkit:
     ) -> dict[str, Any]:
         """Write a YouTube transcript whose intervals map to the source video."""
         try:
-            post = _post or self.router.parse(url)
+            post = _post or self._parse_post(url)
         except Exception as exc:
             return {
                 "status": "error",
@@ -399,8 +419,13 @@ class SocialMediaToolkit:
         }
 
     def get_comments(self, url: str, *, sort_by: str = "likes", limit: int = 10) -> dict[str, Any]:
-        post = self.router.parse(url)
-        return self.router.get_douyin_comments_for_post(post, sort_by=sort_by, limit=limit)
+        post = self._parse_post(url)
+        result = self.router.get_douyin_comments_for_post(post, sort_by=sort_by, limit=limit)
+        result["warnings"] = _dedupe(
+            list(result.get("warnings") or []) + list((post.extra or {}).get("warnings") or [])
+        )
+        result.update(self._post_route_metadata(post))
+        return result
 
     def download(
         self,
@@ -409,8 +434,13 @@ class SocialMediaToolkit:
         output_dir: str,
         include: Sequence[str] | str = ("video", "cover", "images"),
     ) -> dict[str, Any]:
-        post = self.router.parse(url)
-        return self.downloader.download_post(post, output_dir=output_dir, include=include)
+        post = self._parse_post(url)
+        result = self.downloader.download_post(post, output_dir=output_dir, include=include)
+        result["warnings"] = _dedupe(
+            list(result.get("warnings") or []) + list((post.extra or {}).get("warnings") or [])
+        )
+        result.update(self._post_route_metadata(post))
+        return result
 
     def capture(
         self,
@@ -424,7 +454,7 @@ class SocialMediaToolkit:
         media: Sequence[str] | str = ("video", "cover", "images"),
     ) -> dict[str, Any]:
         """Create one bundle; persistent media remains opt-in through output_dir."""
-        post = self.router.parse(url)
+        post = self._parse_post(url)
         bundle = PostBundle.from_social_post(post)
 
         if include_text:
@@ -485,6 +515,7 @@ class SocialMediaToolkit:
         """Report readiness and setup links without exposing any secret value."""
         getnote_installed = self.getnote.available()
         getnote_authenticated = self.getnote.authenticated() if getnote_installed else False
+        tikhub_configured = self.tikhub.configured()
         asr_configured = self.asr.configured()
         standard_configured = bool(
             getattr(self.asr, "standard_configured", lambda: False)()
@@ -524,7 +555,14 @@ class SocialMediaToolkit:
                 else "partial"
             ),
             "supported_platforms": ["douyin", "xiaohongshu", "bilibili", "youtube"],
-            "text_route": ["getnote", "platform_subtitle", "volcengine_cloud_asr"],
+            "text_route": [
+                "getnote",
+                "public_platform",
+                "tikhub_douyin_media_fallback",
+                "platform_subtitle",
+                "volcengine_cloud_asr",
+            ],
+            "douyin_media_route": ["public_platform", "tikhub_optional_fallback"],
             "timed_transcript": {
                 "platforms": ["youtube"],
                 "route": ["manual_subtitle_cues", "automatic_subtitle_cues", "volcengine_timed_asr"],
@@ -550,6 +588,14 @@ class SocialMediaToolkit:
                     "docs_url": GETNOTE_DOCS_URL,
                     "may_require_paid_membership": True,
                 },
+                "tikhub_douyin_media_fallback": {
+                    "configured": tikhub_configured,
+                    "secret_name": TIKHUB_API_KEY_SECRET_NAME,
+                    "docs_url": TIKHUB_DOUYIN_DOCS_URL,
+                    "automatic_only_after_public_failure": True,
+                    "may_incur_usage_cost": True,
+                    "media_urls_ephemeral": True,
+                },
                 "volcengine_cloud_asr": {
                     "configured": asr_configured,
                     "secret_name": VOLCENGINE_ASR_SECRET_NAME,
@@ -571,6 +617,38 @@ class SocialMediaToolkit:
                 "yt_dlp": {"installed": yt_dlp_installed, "free": True},
             },
             "warnings": warnings,
+        }
+
+    def _parse_post(self, url: str) -> SocialPost:
+        """Parse publicly first, then use optional TikHub for Douyin only."""
+        try:
+            return self.router.parse(url)
+        except Exception as public_error:
+            if self._infer_platform(url) != "douyin" or not self.tikhub.configured():
+                raise
+            try:
+                post = self.tikhub.fetch_post(url)
+            except Exception as tikhub_error:
+                raise ValueError(
+                    f"Public Douyin extraction failed: {public_error}; "
+                    f"TikHub fallback failed: {tikhub_error}"
+                ) from tikhub_error
+            warnings = list((post.extra or {}).get("warnings") or [])
+            warnings.insert(0, f"Public Douyin extraction failed: {public_error}")
+            post.extra["warnings"] = _dedupe(warnings)
+            return post
+
+    @staticmethod
+    def _post_route_metadata(post: SocialPost) -> dict[str, Any]:
+        extra = post.extra or {}
+        metadata_route = extra.get("metadata_route")
+        if not metadata_route:
+            return {}
+        return {
+            "metadata_route": metadata_route,
+            "metadata_provider": extra.get("metadata_provider"),
+            "media_urls_ephemeral": bool(extra.get("media_urls_ephemeral")),
+            "media_resolution_may_incur_usage_cost": bool(extra.get("may_incur_usage_cost")),
         }
 
     def _infer_platform(self, url: str) -> Optional[str]:

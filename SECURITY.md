@@ -37,6 +37,9 @@ a best-effort basis and coordinate disclosure after a fix is available.
 - It does not require browser cookies or a logged-in browser profile.
 - Provider secret values are read from the process environment or an optional
   secret manager and are never included in results.
+- Optional TikHub Douyin responses may contain signed, expiring public CDN
+  URLs. The toolkit reports their temporary nature and does not persist them
+  unless a caller explicitly requests a media download.
 - Downloads reject local/private literal IP addresses, cap transfer size,
   sanitize filenames, and record SHA-256 hashes.
 - ASR media is temporary. The standard long-recording route also deletes its
@@ -45,4 +48,3 @@ a best-effort basis and coordinate disclosure after a fix is available.
 
 These controls reduce risk but do not make arbitrary third-party content or
 platform endpoints trusted.
-

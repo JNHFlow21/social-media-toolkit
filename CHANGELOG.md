@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-No unreleased changes yet.
+- Added an optional TikHub fallback for public Douyin metadata and temporary
+  CDN media resolution when the free public adapter fails.
+- Kept TikHub out of the canonical text-provider chain: GetNote remains first,
+  TikHub only supplies ephemeral media, and Volcengine remains the only ASR.
+- Added secure `TIKHUB_API_KEY` loading from the process environment or the
+  maintainer's optional Agent Switch FD path, plus explicit paid-route and
+  expiring-URL provenance.
+- Added resumable retries for temporary non-YouTube media downloads and prefer
+  stable direct Douyin CDN candidates over redirect/experiment endpoints.
+- Added synthetic video/image fixtures, service fallback coverage, doctor
+  reporting, and synchronized English/Simplified Chinese documentation.
 
 ## 0.4.0 - 2026-08-11
 

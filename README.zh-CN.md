@@ -94,13 +94,16 @@ socialkit inspect "SHARE_URL"
 ```
 
 以上是合成示例。真实字段取决于公开来源实际提供的内容。
+如果免费的抖音公开解析失败，且已配置 `TIKHUB_API_KEY`，
+`inspect` 会自动使用付费的 TikHub 回退路由，并在 provenance 中明确
+记录计费和临时媒体 URL 提示。
 
 ## 能做什么
 
 | 目标 | 使用方式 | 需要什么 | 是否可能产生费用 |
 |---|---|---|---:|
-| 统一公开元数据 | SDK / CLI / MCP | Python 依赖；YouTube 使用 `yt-dlp` | 否 |
-| 获取可读文字 | GetNote → 原生字幕/正文 → 火山引擎 ASR | 取决于实际采用的路线 | GetNote 会员或火山 ASR 可能收费 |
+| 统一公开元数据 | SDK / CLI / MCP | Python 依赖；YouTube 使用 `yt-dlp` | 默认免费；可选 TikHub 抖音回退可能收费 |
+| 获取可读文字 | GetNote → 公开解析/可选 TikHub 媒体 → 原生字幕/正文 → 火山引擎 ASR | 取决于实际采用的路线 | GetNote、TikHub 或火山 ASR 可能收费 |
 | 生成 YouTube 带时间码逐字稿 | 人工字幕 → 自动字幕 → 带时间码的火山引擎 ASR | `yt-dlp`；ASR 还需要 `ffmpeg` 和凭据 | ASR/TOS 可能收费 |
 | 下载视频、封面或图片 | 显式调用 `download` / `capture` | 必须指定输出目录 | 工具本身免费 |
 | 抽取公开评论样本 | 抖音公开一级评论样本 | 不需要账号或 Cookie | 否 |
@@ -110,7 +113,7 @@ socialkit inspect "SHARE_URL"
 
 | 平台 | 元数据 | 文字 | 视频 | 封面/图片 | 公开评论 |
 |---|---:|---:|---:|---:|---:|
-| 抖音 | ✅ | GetNote → 火山引擎 ASR | ✅ | ✅，包含公开图文内容 | ✅ 有上限的一级评论样本 |
+| 抖音 | ✅；可选 TikHub 回退 | GetNote → 公开/TikHub 媒体 → 火山引擎 ASR | ✅ | ✅，包含公开图文内容 | ✅ 有上限的一级评论样本 |
 | 小红书 / RedNote | ✅ | GetNote → 帖子正文 / 火山引擎 ASR | ✅ | ✅ | — |
 | Bilibili | ✅ | GetNote → 原生字幕 → 火山引擎 ASR | ✅ | ✅ | — |
 | YouTube | ✅ | GetNote → 人工字幕 → 自动字幕 → 火山引擎 ASR | ✅ | ✅ | — |
@@ -124,7 +127,10 @@ socialkit inspect "SHARE_URL"
 ```mermaid
 flowchart LR
     U["公开链接"] --> G["GetNote 原始内容"]
-    G -->|"没有可用文字"| N["原生字幕或帖子正文"]
+    G -->|"没有可用文字"| P["免费公开平台解析"]
+    P -->|"抖音解析失败 + 已配密钥"| H["可选 TikHub 媒体回退"]
+    P --> N["原生字幕或帖子正文"]
+    H --> N
     N -->|"视频仍无文字"| V["火山引擎云 ASR"]
     V -->|"失败"| E["返回明确错误"]
 ```
@@ -161,6 +167,23 @@ getnote auth login
 ```
 
 GetNote 自行管理凭据，其服务可能需要付费会员。调用 `text`、启用文字的 `capture`，或执行完整链路测试，即表示请求运行文档中的文字路线，也可能将链接保存到用户自己的 GetNote 账号。
+
+### 可选 TikHub 抖音回退
+
+密钥名称：
+
+```text
+TIKHUB_API_KEY
+```
+
+工具始终先尝试免费的抖音公开解析。只有在该路由失败、且已配置
+此密钥时，单一编排器才会调用 TikHub Web 分享链接接口。TikHub 只负责
+提供结构化公开元数据和临时 CDN 媒体 URL，不是文字或 ASR 服务商。
+请求可能产生 TikHub 费用，CDN URL 也可能过期。每次结果都会记录路由、计费
+提示和 URL 临时性。
+
+请从 [TikHub 文档](https://docs.tikhub.io/257556744e0) 获取密钥与接口说明，
+再通过进程环境、MCP 客户端或其他密钥管理器注入。不要写入项目 `.env`。
 
 ### 火山引擎 ASR 与 TOS
 
@@ -203,7 +226,7 @@ TOS_PRESIGN_EXPIRES          # 可选
 # 仅获取元数据：不持久化写入，也不调用 GetNote 或 ASR
 socialkit inspect "SHARE_URL"
 
-# 获取规范化的可读文字；可能使用 GetNote 或付费 ASR
+# 获取规范化的可读文字；可能使用 GetNote、付费 TikHub 媒体或付费 ASR
 socialkit text "SHARE_URL"
 
 # 生成 YouTube 带时间码的逐字稿
@@ -290,7 +313,7 @@ social-media-toolkit-mcp
 | 持久写入 | 仅写入显式指定的输出目录和可选的用户配置文件 |
 | 临时数据 | ASR 媒体和标准版 TOS 对象会在返回前删除 |
 | 遥测 | 不采集产品遥测 |
-| 网络访问 | 公开平台/GetNote 读取，以及可选的火山引擎/TOS 调用 |
+| 网络访问 | 公开平台/GetNote 读取，以及可选的 TikHub/火山引擎/TOS 调用 |
 | 发布能力 | 有意不提供向社交账号上传或发布内容的功能 |
 | 法律责任 | 用户仍须遵守平台条款、版权要求和所在地法律 |
 

@@ -36,9 +36,12 @@ uv run python -m unittest discover -s tests
    CLI, and MCP transport.
 2. Public read paths must not require cookies, a browser profile, or a logged-in
    account.
-3. `inspect` must not start GetNote, ASR, or a persistent download.
+3. `inspect` must not start GetNote, ASR, or a persistent download. When the
+   free Douyin parser fails, it may call optional TikHub only if its key is
+   configured and must disclose the paid, ephemeral-media route.
 4. Persistent media and transcript files require an explicit output directory.
-5. Every result preserves provenance, warnings, and platform limitations.
+5. Every result preserves provenance, warnings, platform limitations, and any
+   provider cost/temporary-URL disclosure.
 6. Secret values must never appear in source, fixtures, logs, command
    arguments, documentation, or issue content.
 7. Tests use synthetic fixtures. Do not commit real posts, chats, cookies,

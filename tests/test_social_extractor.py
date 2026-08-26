@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from social_media_toolkit.platforms.core import (
     BilibiliPlatformAdapter,
     DouyinPlatformAdapter,
@@ -26,6 +28,7 @@ from social_media_toolkit.providers.volcengine import (
     VolcengineASRError,
     _call_volcengine,
     _call_volcengine_standard,
+    _download_media,
     _download_youtube_media,
     _load_api_key,
     _submit_and_query_standard,
@@ -314,6 +317,49 @@ class VolcengineASRTests(unittest.TestCase):
             ),
         ):
             self.assertIsNone(_load_api_key())
+
+    def test_direct_media_download_resumes_after_an_incomplete_transfer(self):
+        class StreamingResponse:
+            def __init__(self, *, chunks, content_length, status_code=200, error=None):
+                self.chunks = chunks
+                self.headers = {"Content-Length": str(content_length)}
+                self.status_code = status_code
+                self.error = error
+                self.closed = False
+
+            def raise_for_status(self):
+                return None
+
+            def iter_content(self, chunk_size):
+                yield from self.chunks
+                if self.error:
+                    raise self.error
+
+            def close(self):
+                self.closed = True
+
+        first = StreamingResponse(
+            chunks=[b"abc"],
+            content_length=6,
+            error=requests.exceptions.ChunkedEncodingError("connection broke"),
+        )
+        second = StreamingResponse(chunks=[b"def"], content_length=3, status_code=206)
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "social_media_toolkit.providers.volcengine.requests.get",
+            side_effect=[first, second],
+        ) as request:
+            path = _download_media(
+                "https://v3-dy-o.zjcdn.com/public/video.mp4",
+                Path(tmpdir),
+                referer="https://www.douyin.com/video/1",
+            )
+
+            self.assertEqual(path.read_bytes(), b"abcdef")
+
+        self.assertNotIn("Range", request.call_args_list[0].kwargs["headers"])
+        self.assertEqual(request.call_args_list[1].kwargs["headers"]["Range"], "bytes=3-")
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
 
     def test_transcribe_uses_only_volcengine_response(self):
         with tempfile.TemporaryDirectory() as tmpdir:

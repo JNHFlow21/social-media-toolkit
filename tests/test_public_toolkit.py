@@ -102,6 +102,31 @@ class FakeASR:
         return self._configured
 
 
+class FakeTikHub:
+    def __init__(
+        self,
+        post: SocialPost | None = None,
+        *,
+        configured: bool = True,
+        error: Exception | None = None,
+    ):
+        self.post = post
+        self._configured = configured
+        self.error = error
+        self.calls = []
+
+    def configured(self) -> bool:
+        return self._configured
+
+    def fetch_post(self, url: str) -> SocialPost:
+        self.calls.append(url)
+        if self.error:
+            raise self.error
+        if self.post is None:
+            raise RuntimeError("missing fake TikHub post")
+        return self.post
+
+
 class FakeRouter:
     def __init__(self, post: SocialPost):
         self.post = post
@@ -132,6 +157,34 @@ class FakeRouter:
 class FailingCommentRouter(FakeRouter):
     def get_douyin_comments_for_post(self, post: SocialPost, *, sort_by: str, limit: int):
         raise RuntimeError("comment endpoint unavailable")
+
+
+class FakeDouyinAdapter:
+    def can_handle(self, url: str) -> bool:
+        return "douyin.com" in url
+
+
+class FailingDouyinRouter:
+    def __init__(self, message: str = "public Douyin parser changed"):
+        self.message = message
+        self.parse_calls = 0
+        self.platform_adapters = [FakeDouyinAdapter()]
+
+    def parse(self, url: str) -> SocialPost:
+        self.parse_calls += 1
+        raise ValueError(self.message)
+
+    def get_douyin_comments_for_post(self, post: SocialPost, *, sort_by: str, limit: int):
+        return {
+            "comments": [],
+            "reported_comment_total": 0,
+            "ranking_scope": "retrieved_public_top_level_comments",
+            "status": "success",
+            "sort_by": sort_by,
+            "source": "douyin_public_mobile_share_api",
+            "requested_limit": limit,
+            "returned_count": 0,
+        }
 
 
 class FakeDownloader:
@@ -316,6 +369,153 @@ class TextPipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("cloud unavailable", result["warnings"][-1])
         self.assertEqual(result["metadata"]["local_fallback"], False)
+
+    def test_tikhub_resolves_douyin_media_after_public_parser_failure(self):
+        post = make_video_post(platform="douyin")
+        post.post_id = "7678265840617278720"
+        post.extra.update(
+            {
+                "metadata_route": "tikhub.douyin.web.fetch_one_video_by_share_url",
+                "metadata_provider": "tikhub",
+                "media_urls_ephemeral": True,
+                "may_incur_usage_cost": True,
+                "warnings": ["TikHub requests may incur usage charges"],
+            }
+        )
+        tikhub = FakeTikHub(post)
+        asr = FakeASR("TikHub 媒体进入火山 ASR")
+        toolkit = SocialMediaToolkit(
+            router=FailingDouyinRouter(),
+            getnote=FakeGetNote(GetNoteResult(status="failed", warnings=["GetNote failed"])),
+            tikhub=tikhub,
+            asr=asr,
+            downloader=FakeDownloader(),
+        )
+
+        result = toolkit.get_text("https://v.douyin.com/demo/")
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["provider"], "volcengine_bigmodel")
+        self.assertEqual(result["text"], "TikHub 媒体进入火山 ASR")
+        self.assertEqual(tikhub.calls, ["https://v.douyin.com/demo/"])
+        self.assertEqual(asr.calls[0].post_id, "7678265840617278720")
+        self.assertEqual(
+            result["metadata"]["metadata_route"],
+            "tikhub.douyin.web.fetch_one_video_by_share_url",
+        )
+        self.assertTrue(result["metadata"]["media_urls_ephemeral"])
+        self.assertIn("public Douyin parser changed", " ".join(result["warnings"]))
+        self.assertIn("TikHub requests may incur usage charges", result["warnings"])
+
+    def test_tikhub_fallback_is_not_called_when_public_parser_succeeds(self):
+        tikhub = FakeTikHub(make_video_post(platform="douyin"))
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(make_video_post(platform="douyin")),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            tikhub=tikhub,
+            asr=FakeASR(),
+            downloader=FakeDownloader(),
+        )
+
+        result = toolkit.inspect("https://v.douyin.com/demo/")
+
+        self.assertEqual(result["source"]["platform"], "douyin")
+        self.assertEqual(tikhub.calls, [])
+
+    def test_missing_optional_tikhub_key_preserves_public_failure(self):
+        tikhub = FakeTikHub(configured=False)
+        toolkit = SocialMediaToolkit(
+            router=FailingDouyinRouter(),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            tikhub=tikhub,
+            asr=FakeASR(),
+            downloader=FakeDownloader(),
+        )
+
+        result = toolkit.get_text("https://v.douyin.com/demo/")
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["metadata"]["route"], "platform_extraction_failed")
+        self.assertIn("public Douyin parser changed", result["warnings"][-1])
+        self.assertEqual(tikhub.calls, [])
+
+    def test_inspect_preserves_tikhub_provenance_and_cost_warning(self):
+        post = make_video_post(platform="douyin")
+        post.extra.update(
+            {
+                "metadata_route": "tikhub.douyin.web.fetch_one_video_by_share_url",
+                "metadata_provider": "tikhub",
+                "media_urls_ephemeral": True,
+                "may_incur_usage_cost": True,
+                "warnings": ["TikHub requests may incur usage charges"],
+            }
+        )
+        toolkit = SocialMediaToolkit(
+            router=FailingDouyinRouter(),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            tikhub=FakeTikHub(post),
+            asr=FakeASR(),
+            downloader=FakeDownloader(),
+        )
+
+        result = toolkit.inspect("https://v.douyin.com/demo/")
+
+        self.assertIn(
+            "metadata:tikhub.douyin.web.fetch_one_video_by_share_url",
+            result["provenance"]["routes"],
+        )
+        self.assertIn("TikHub requests may incur usage charges", result["provenance"]["warnings"])
+        self.assertTrue(result["source"]["platform_data"]["media_urls_ephemeral"])
+
+    def test_doctor_reports_optional_tikhub_without_making_it_a_readiness_gate(self):
+        toolkit = SocialMediaToolkit(
+            router=FakeRouter(make_video_post()),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            tikhub=FakeTikHub(configured=True),
+            asr=FakeASR(configured=True),
+            downloader=FakeDownloader(),
+        )
+
+        result = toolkit.doctor()
+
+        capability = result["capabilities"]["tikhub_douyin_media_fallback"]
+        self.assertTrue(capability["configured"])
+        self.assertTrue(capability["automatic_only_after_public_failure"])
+        self.assertTrue(capability["may_incur_usage_cost"])
+
+    def test_comments_and_download_disclose_paid_tikhub_media_route(self):
+        post = make_video_post(platform="douyin")
+        post.extra.update(
+            {
+                "metadata_route": "tikhub.douyin.web.fetch_one_video_by_share_url",
+                "metadata_provider": "tikhub",
+                "media_urls_ephemeral": True,
+                "may_incur_usage_cost": True,
+                "warnings": ["TikHub requests may incur usage charges"],
+            }
+        )
+        toolkit = SocialMediaToolkit(
+            router=FailingDouyinRouter(),
+            getnote=FakeGetNote(GetNoteResult(status="failed")),
+            tikhub=FakeTikHub(post),
+            asr=FakeASR(),
+            downloader=FakeDownloader(),
+        )
+
+        comments = toolkit.get_comments("https://v.douyin.com/demo/")
+        downloaded = toolkit.download(
+            "https://v.douyin.com/demo/",
+            output_dir="/tmp/synthetic-output",
+            include="video",
+        )
+
+        for result in (comments, downloaded):
+            self.assertEqual(
+                result["metadata_route"],
+                "tikhub.douyin.web.fetch_one_video_by_share_url",
+            )
+            self.assertTrue(result["media_resolution_may_incur_usage_cost"])
+            self.assertIn("TikHub requests may incur usage charges", result["warnings"])
 
     def test_timed_youtube_subtitle_writes_md_srt_json_without_getnote_or_asr(self):
         post = make_video_post(platform="youtube")
