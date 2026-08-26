@@ -46,6 +46,9 @@ uv run python -m unittest discover -s tests
    arguments, documentation, or issue content.
 7. Tests use synthetic fixtures. Do not commit real posts, chats, cookies,
    account data, or private media.
+8. The MCP transport currently targets `mcp>=1.28.1,<2`. Do not remove that
+   upper bound without migrating `server.py` to MCP 2.x and preserving the
+   stdio initialize-handshake regression test.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/capabilities.md](docs/capabilities.md) before changing a route or result

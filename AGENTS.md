@@ -24,6 +24,7 @@ This repository is a public, reusable product. It must not depend on the Brain v
 9. Never claim a public comment sample is a global platform ranking.
 10. A plain `text`, text-enabled `capture`, timed-text, or full-chain smoke-test request runs its configured text route automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
 11. The NPX path must be a real tested installer, not a documentation alias. It must not collect credentials, load project secrets, or duplicate Python runtime behavior in JavaScript.
+12. The current MCP transport uses the v1 `FastMCP` API and must keep `mcp>=1.28.1,<2` until a dedicated MCP 2.x migration lands. CI must execute a real stdio initialize handshake, not just compile the module.
 
 ## Secrets
 

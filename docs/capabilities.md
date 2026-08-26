@@ -19,6 +19,7 @@
 
 | Dependency | Used for | Cost |
 |---|---|---|
+| `mcp>=1.28.1,<2` | Current v1 FastMCP stdio server | Free/open source; MCP 2.x requires a separate migration |
 | GetNote CLI | First text route | CLI is open source; service OpenAPI may require membership |
 | `TIKHUB_API_KEY` | Optional Douyin metadata/CDN fallback after free parsing fails | TikHub requests may incur charges |
 | `VOLCENGINE_ASR_API_KEY` | Video without usable text/subtitles, or explicit forced ASR | May incur Volcengine usage charges |

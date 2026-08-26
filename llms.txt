@@ -44,6 +44,11 @@ Only MCP tools:
 - social_capture_bundle
 - social_doctor
 
+MCP runtime compatibility:
+- v0.4.1 uses the v1 FastMCP transport and requires mcp>=1.28.1,<2
+- do not remove the upper bound without migrating server.py to the MCP 2.x API
+- CI includes a real stdio initialize-handshake regression test
+
 Important:
 - This is a standalone public Python package. Agent Switch is optional and is
   never a package or runtime requirement; public users may inject

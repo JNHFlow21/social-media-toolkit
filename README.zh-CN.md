@@ -275,6 +275,10 @@ SDK、CLI 和 MCP 服务器共用同一个 `SocialMediaToolkit` 调度器和同�
 
 ## MCP 服务器
 
+0.4.1 版本有意将 Python MCP SDK 限定为 `mcp>=1.28.1,<2`：当前传输层仍使用
+v1 `FastMCP` API。MCP 2.x 已重命名并修改这套服务器 API，因此未来会用独立的
+v2 兼容迁移处理，而不是让新安装直接失效。
+
 启动 stdio 服务器：
 
 ```bash
