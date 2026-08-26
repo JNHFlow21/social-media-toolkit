@@ -48,7 +48,9 @@ flowchart LR
 ### `social_post_extractor_mcp`
 
 A thin stdio MCP transport. It owns no alternate extraction logic and creates
-exactly one `SocialMediaToolkit` instance.
+exactly one `SocialMediaToolkit` instance. The current transport is built on
+the v1 `FastMCP` API and therefore constrains the dependency to
+`mcp>=1.28.1,<2`; MCP 2.x requires an explicit transport migration.
 
 ### npm bootstrap
 

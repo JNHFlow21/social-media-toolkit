@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## 0.4.1 - 2026-08-26
+
+- Restored fresh-install MCP startup by constraining the v1 FastMCP transport
+  to `mcp>=1.28.1,<2`; MCP 2.x removed `mcp.server.fastmcp` and requires a
+  separate transport migration.
+- Added a real stdio initialize-handshake regression test so dependency drift
+  can no longer pass CI while leaving `social-media-toolkit-mcp` unstartable.
 - Added an optional TikHub fallback for public Douyin metadata and temporary
   CDN media resolution when the free public adapter fails.
 - Kept TikHub out of the canonical text-provider chain: GetNote remains first,

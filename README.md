@@ -277,6 +277,11 @@ The SDK, CLI, and MCP server use the same `SocialMediaToolkit` orchestrator and 
 
 ## MCP server
 
+Release 0.4.1 intentionally constrains the Python MCP SDK to
+`mcp>=1.28.1,<2`: this transport still uses the v1 `FastMCP` API. MCP 2.x
+renamed and changed that server API, so a future v2 migration will be handled
+as a separate compatibility change instead of breaking fresh installs.
+
 Start the stdio server:
 
 ```bash
