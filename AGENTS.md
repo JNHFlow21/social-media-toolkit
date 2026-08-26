@@ -16,13 +16,14 @@ This repository is a public, reusable product. It must not depend on the Brain v
 1. Plain canonical-text precedence is GetNote original content → native platform subtitle → Volcengine cloud ASR.
 2. Timed YouTube transcripts are a separate evidence contract: manual subtitle cues → automatic subtitle cues → timestamped Volcengine cloud ASR. Callers may explicitly force Volcengine ASR, optionally with anonymous speaker diarization and bounded public-metadata context; that mode must bypass native captions. Non-timestamped GetNote text must not short-circuit either route.
 3. Non-empty GetNote original content wins even when a task still contains a stale error message on the plain canonical-text route.
-4. `inspect` and plain `text` do not download persistent media. Timed text requires an explicit output directory and may write only requested transcript artifacts; media remains temporary. Downloads require an explicit output directory.
-5. Every normalized result preserves provenance, warnings, and platform limitations.
-6. SDK, CLI, and MCP must call the same `SocialMediaToolkit`; do not add legacy aliases or a second scheduler.
-7. Volcengine is the only ASR provider. Do not add local ASR or another cloud fallback.
-8. Never claim a public comment sample is a global platform ranking.
-9. A plain `text`, text-enabled `capture`, timed-text, or full-chain smoke-test request runs its configured text route automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
-10. The NPX path must be a real tested installer, not a documentation alias. It must not collect credentials, load project secrets, or duplicate Python runtime behavior in JavaScript.
+4. Douyin media resolution uses the free public adapter first. Only after that adapter fails, and only when `TIKHUB_API_KEY` is configured, may the single orchestrator call TikHub for temporary public CDN URLs. Preserve the paid route and ephemeral-URL warning in provenance.
+5. `inspect` and plain `text` do not download persistent media. Timed text requires an explicit output directory and may write only requested transcript artifacts; media remains temporary. Downloads require an explicit output directory.
+6. Every normalized result preserves provenance, warnings, platform limitations, and paid-route disclosure.
+7. SDK, CLI, and MCP must call the same `SocialMediaToolkit`; do not add legacy aliases or a second scheduler.
+8. Volcengine is the only ASR provider. TikHub resolves media only; do not treat it as a text/ASR provider or add local ASR/another cloud fallback.
+9. Never claim a public comment sample is a global platform ranking.
+10. A plain `text`, text-enabled `capture`, timed-text, or full-chain smoke-test request runs its configured text route automatically. Do not ask for a second authorization; report the route and any possible usage charge afterward.
+11. The NPX path must be a real tested installer, not a documentation alias. It must not collect credentials, load project secrets, or duplicate Python runtime behavior in JavaScript.
 
 ## Secrets
 
